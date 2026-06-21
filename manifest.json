@@ -1,0 +1,58 @@
+{
+  "manifest_version": 3,
+  "name": "Claude Usage Tracker",
+  "version": "1.0.0",
+  "description": "Track your Claude.ai usage — messages, tokens, and conversations. Not affiliated with Anthropic.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "storage",
+    "notifications",
+    "alarms",
+    "activeTab",
+    "cookies",
+    "webRequest"
+  ],
+  "host_permissions": [
+    "https://claude.ai/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["dist/inpage/inpage.css", "dist/watcher.js"],
+      "matches": ["https://claude.ai/*"]
+    }
+  ],
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://claude.ai/*"],
+      "js": ["dist/injector.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://claude.ai/*"],
+      "js": ["dist/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "dist/popup/popup.html",
+    "default_title": "Claude Usage Tracker"
+  },
+  "options_ui": {
+    "page": "dist/options/options.html",
+    "open_in_tab": true
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "claude-usage-tracker@example.com",
+      "strict_min_version": "109.0"
+    }
+  }
+}

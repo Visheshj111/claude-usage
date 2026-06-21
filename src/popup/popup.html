@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../theme-boot.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Usage</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- Privacy Policy Screen (shown first until accepted) -->
+    <div id="privacy-screen">
+      <h2 class="privacy-title">Privacy Policy</h2>
+      <div class="privacy-scroll">
+        <p><strong>Claude Usage Tracker</strong> tracks your Claude.ai usage entirely in your browser.</p>
+
+        <h3>What We Collect</h3>
+        <ul>
+          <li>Message counts and token usage visible on the page</li>
+          <li>Conversation titles and message counts</li>
+          <li>Session timing (start/stop/duration)</li>
+        </ul>
+
+        <h3>Where It's Stored</h3>
+        <ul>
+          <li>All data is stored locally in your browser's <code>chrome.storage</code> API</li>
+          <li>When you use the "Export" feature, a Markdown file is generated — nothing is transmitted</li>
+          <li>No data is sent to any external server or third party</li>
+        </ul>
+
+        <h3>What We Do NOT Collect</h3>
+        <ul>
+          <li>We do <strong>not</strong> read the content of your messages</li>
+          <li>We do <strong>not</strong> send data to any external server (Claude.ai API calls are made by your browser on your behalf)</li>
+          <li>We do <strong>not</strong> use analytics, telemetry, or tracking pixels</li>
+          <li>We do <strong>not</strong> sell, share, or transmit your data</li>
+        </ul>
+
+        <h3>Your Control</h3>
+        <ul>
+          <li>Delete all tracked data anytime &mdash; use the <strong>Clear</strong> button in the footer</li>
+          <li>Uninstall the extension to remove all stored data</li>
+          <li>Review or change settings on the Settings page</li>
+        </ul>
+
+        <p class="privacy-note">
+          Because of how the extension works, it must read the DOM of claude.ai pages to detect conversation activity.
+          This is done entirely in your browser. Nothing is transmitted externally.
+        </p>
+      </div>
+      <button id="privacy-accept-btn" class="btn-primary">Accept &amp; Continue</button>
+    </div>
+
+    <!-- Main extension content (shown after privacy policy is accepted) -->
+    <div id="main-content" style="display:none;">
+      <header>
+        <h3>Usage</h3>
+        <div class="header-badges">
+          <span class="api-dot" id="api-dot"></span>
+          <span class="badge" id="window-badge">5h window</span>
+          <span class="badge source-badge" id="source-badge">detecting</span>
+          <span class="badge" id="plan-badge" style="display:none"></span>
+          <span class="badge accurate-badge" id="accurate-badge"></span>
+        </div>
+      </header>
+
+      <!-- Peak hours banner -->
+      <div class="peak-banner" id="peak-row">
+        <div class="peak-banner-main">
+          <span class="peak-dot" id="peak-dot"></span>
+          <span class="peak-message" id="peak-message">Checking peak hours...</span>
+          <span class="peak-countdown" id="peak-timer">--:--:--</span>
+        </div>
+        <div class="peak-note">Applies to Claude.ai chat. Claude Code on Pro/Max plans is no longer throttled during peak hours (since May 2026).</div>
+      </div>
+
+      <!-- Gauge -->
+      <div class="gauge-wrap">
+        <svg class="gauge" viewBox="0 0 120 120">
+          <circle class="gauge-bg" cx="60" cy="60" r="48" />
+          <circle class="gauge-fill" id="gauge-ring" cx="60" cy="60" r="48"
+            stroke-dasharray="301.6" stroke-dashoffset="301.6" />
+        </svg>
+        <span class="gauge-text" id="gauge-text">0%</span>
+      </div>
+
+      <!-- Metric grid -->
+      <div class="metric-grid">
+        <div class="metric-cell">
+          <span class="metric-val" id="metric-pct">0%</span>
+          <span class="metric-lbl">Used</span>
+        </div>
+        <div class="metric-cell">
+          <span class="metric-val" id="metric-used">0</span>
+          <span class="metric-lbl">Messages</span>
+        </div>
+        <div class="metric-cell">
+          <span class="metric-val metric-remain" id="metric-remain">0</span>
+          <span class="metric-lbl">Remaining</span>
+        </div>
+      </div>
+
+      <!-- Progress bars -->
+      <div class="prog-section">
+        <div class="prog-row">
+          <span class="prog-lbl">Session</span>
+          <div class="prog-bar">
+            <div class="prog-fill" id="session-bar"></div>
+          </div>
+          <span class="prog-nums" id="session-nums">0 / 45</span>
+        </div>
+        <div class="prog-row">
+          <span class="prog-lbl">Tokens</span>
+          <div class="prog-bar">
+            <div class="prog-fill" id="token-bar"></div>
+          </div>
+          <span class="prog-nums" id="token-nums">0 / 90K</span>
+        </div>
+
+        <!-- Weekly usage (hidden by default) -->
+        <div id="weekly-group" style="display:none">
+          <div class="prog-row">
+            <span class="prog-lbl">All models</span>
+            <div class="prog-bar">
+              <div class="prog-fill safe" id="weekly-bar"></div>
+            </div>
+            <span class="prog-nums" id="weekly-nums"></span>
+          </div>
+          <div class="prog-row" id="weekly-sonnet-row" style="display:none">
+            <span class="prog-lbl">Sonnet</span>
+            <div class="prog-bar">
+              <div class="prog-fill safe" id="weekly-sonnet-bar"></div>
+            </div>
+            <span class="prog-nums" id="weekly-sonnet-nums"></span>
+          </div>
+          <div class="prog-row" id="weekly-opus-row" style="display:none">
+            <span class="prog-lbl">Opus</span>
+            <div class="prog-bar">
+              <div class="prog-fill safe" id="weekly-opus-bar"></div>
+            </div>
+            <span class="prog-nums" id="weekly-opus-nums"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Session row -->
+      <div class="session-row">
+        <div class="session-top">
+          <span class="session-dot" id="session-dot"></span>
+          <span class="session-label">Session</span>
+          <span class="session-time" id="session-time">00:00:00</span>
+          <span class="session-suffix" id="session-suffix">/ 5h</span>
+        </div>
+        <div class="session-sub">
+          <span class="session-convs" id="session-convs">0 convs</span>
+          <span class="session-usage-line" id="session-usage-line"></span>
+        </div>
+      </div>
+
+      <!-- Reset row -->
+      <div class="reset-row">
+        <span class="reset-lbl">Window resets in</span>
+        <span class="reset-time" id="reset-timer">--:--:--</span>
+      </div>
+
+      <!-- Cooldown row -->
+      <div class="reset-row" id="cooldown-info" style="display:none;">
+        <span class="reset-lbl">Cooldown</span>
+        <span class="reset-time" id="cooldown-timer"></span>
+      </div>
+
+      <!-- Limit type / org info -->
+      <div class="info-row">
+        <span class="limit-type" id="limit-type"></span>
+        <span class="org-id" id="org-id" style="display:none;"></span>
+      </div>
+
+      <!-- Confidence row -->
+      <div class="reset-row confidence-row">
+        <span class="reset-lbl">Data confidence</span>
+        <div class="confidence-bar-wrap">
+          <div class="confidence-fill" id="confidence-bar"></div>
+        </div>
+        <span class="confidence-pct" id="confidence-pct">0%</span>
+      </div>
+
+      <hr class="divider">
+
+      <div class="conv-header">
+        <span class="conv-lbl">Conversations</span>
+        <span class="conv-count" id="conv-count"></span>
+      </div>
+      <ul id="conv-list">
+        <li class="empty-li">None yet.</li>
+      </ul>
+
+      <footer>
+        <button id="dashboard-btn">Dashboard</button>
+        <button id="export-btn">Export</button>
+        <button id="settings-btn">Settings</button>
+        <button id="reset-btn">Clear</button>
+      </footer>
+
+      <div class="credit">
+        Made by <a href="https://github.com/visheshj111" target="_blank">Vishesh Jangid</a>
+        &middot; <a href="#" id="show-privacy-link">Privacy</a>
+      </div>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

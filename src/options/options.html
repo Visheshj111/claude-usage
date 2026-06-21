@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../theme-boot.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings — Claude Usage</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Settings</h1>
+    </header>
+
+    <section>
+      <h2>Usage Limits</h2>
+      <p class="desc">Caps used to show remaining capacity.</p>
+
+      <div class="field">
+        <label for="limit-messages">Daily messages</label>
+        <input type="number" id="limit-messages" min="1" max="10000">
+      </div>
+
+      <div class="field">
+        <label for="limit-tokens">Daily tokens</label>
+        <input type="number" id="limit-tokens" min="1" max="999999999">
+      </div>
+    </section>
+
+    <section>
+      <h2>Usage Window</h2>
+      <p class="desc">Claude Pro resets every 5 hours. Daily/weekly for personal tracking.</p>
+      <div class="field">
+        <select id="reset-period">
+          <option value="5h">5-Hour Window (Claude Pro)</option>
+          <option value="daily">Daily (midnight)</option>
+          <option value="weekly">Weekly (Monday)</option>
+          <option value="monthly">Monthly (1st)</option>
+        </select>
+      </div>
+    </section>
+
+    <section>
+      <h2>Token Estimation</h2>
+      <p class="desc">Method for estimating tokens from text.</p>
+      <div class="field">
+        <select id="token-method">
+          <option value="chars/4">Chars ÷ 4</option>
+          <option value="chars/3">Chars ÷ 3 (conservative)</option>
+          <option value="words*1.3">Words × 1.3</option>
+        </select>
+      </div>
+    </section>
+
+    <section>
+      <h2>Notifications</h2>
+      <p class="desc">Browser notification at 50/75/90/100% usage.</p>
+      <label class="check">
+        <input type="checkbox" id="show-notifications">
+        <span>Enable milestones</span>
+      </label>
+    </section>
+
+    <section>
+      <h2>Theme</h2>
+      <p class="desc">Widget and popup appearance.</p>
+      <div class="field">
+        <select id="theme-mode">
+          <option value="auto">Auto (system)</option>
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="danger">
+      <h2>Data</h2>
+      <p class="desc">Erase all tracked usage and conversations.</p>
+      <button id="reset-all-btn" class="btn-danger">Delete all data</button>
+    </section>
+
+    <section>
+      <h2>Privacy Policy</h2>
+      <p class="desc">How your data is handled by Claude Usage Tracker.</p>
+      <div class="privacy-body">
+        <p><strong>Claude Usage Tracker</strong> tracks your Claude.ai usage entirely in your browser.</p>
+
+        <h3>What We Collect</h3>
+        <ul>
+          <li>Message counts and token usage visible on the page</li>
+          <li>Conversation titles and message counts</li>
+          <li>Session timing (start/stop/duration)</li>
+        </ul>
+
+        <h3>Where It's Stored</h3>
+        <ul>
+          <li>All data is stored locally in your browser's <code>chrome.storage</code> API</li>
+          <li>When you use the "Export" feature, a Markdown file is generated — nothing is transmitted</li>
+          <li>No data is sent to any external server or third party</li>
+        </ul>
+
+        <h3>What We Do NOT Collect</h3>
+        <ul>
+          <li>We do <strong>not</strong> read the content of your messages</li>
+          <li>We do <strong>not</strong> send data to any external server</li>
+          <li>We do <strong>not</strong> use analytics, telemetry, or tracking</li>
+          <li>We do <strong>not</strong> sell, share, or transmit your data</li>
+        </ul>
+
+        <h3>Your Control</h3>
+        <ul>
+          <li>Delete all tracked data anytime with the <strong>Delete all data</strong> button above</li>
+          <li>Uninstall the extension to remove all stored data</li>
+          <li>Review this policy anytime in Settings</li>
+        </ul>
+
+        <p class="privacy-note">
+          This extension reads the DOM of claude.ai pages to detect conversation activity.
+          All processing is done locally in your browser. Nothing is transmitted externally.
+        </p>
+      </div>
+    </section>
+
+    <div class="footer-bar">
+      <button id="save-btn" class="btn-primary">Save</button>
+      <span id="save-status"></span>
+    </div>
+    <div class="credit">Made by <a href="https://github.com/visheshj111" target="_blank">Vishesh Jangid</a> &middot; <a href="https://visheshj111.github.io/portfolio/" target="_blank">Portfolio</a></div>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

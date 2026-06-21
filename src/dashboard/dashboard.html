@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="../theme-boot.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Usage Dashboard — Claude Usage Tracker</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <div class="header-left">
+        <h1>Usage</h1>
+        <span class="badge" id="period-badge">Daily</span>
+      </div>
+      <div class="header-right">
+        <span class="status-dot" id="status-dot"></span>
+        <span class="status-label" id="status-label">Tracking</span>
+      </div>
+    </header>
+
+    <!-- Overview -->
+    <section>
+      <div class="section-header">
+        <h2>Period Overview</h2>
+        <span class="section-meta" id="overview-period">Today</span>
+      </div>
+
+      <div class="overview-grid">
+        <div class="overview-stat">
+          <span class="overview-val mono" id="ov-messages">0</span>
+          <span class="overview-lbl">messages</span>
+          <span class="overview-sub mono" id="ov-messages-of">/ 100</span>
+        </div>
+        <div class="overview-stat">
+          <span class="overview-val mono" id="ov-tokens">0</span>
+          <span class="overview-lbl">tokens</span>
+          <span class="overview-sub mono" id="ov-tokens-of">/ 50K</span>
+        </div>
+        <div class="overview-stat">
+          <span class="overview-val mono" id="ov-sent">0</span>
+          <span class="overview-lbl">sent</span>
+        </div>
+        <div class="overview-stat">
+          <span class="overview-val mono" id="ov-recv">0</span>
+          <span class="overview-lbl">received</span>
+        </div>
+        <div class="overview-stat">
+          <span class="overview-val mono" id="ov-convs">0</span>
+          <span class="overview-lbl">conversations</span>
+        </div>
+        <div class="overview-stat">
+          <span class="overview-val mono" id="ov-session">--:--:--</span>
+          <span class="overview-lbl">session</span>
+        </div>
+      </div>
+
+      <div class="progress-group">
+        <div class="progress-row">
+          <span class="progress-lbl">Messages</span>
+          <div class="progress-bar"><div class="progress-fill" id="bar-messages"></div></div>
+          <span class="progress-nums mono" id="nums-messages">0 / 100</span>
+        </div>
+        <div class="progress-row">
+          <span class="progress-lbl">Tokens</span>
+          <div class="progress-bar"><div class="progress-fill" id="bar-tokens"></div></div>
+          <span class="progress-nums mono" id="nums-tokens">0 / 50K</span>
+        </div>
+      </div>
+
+      <div class="reset-row">
+        <span class="reset-lbl">Reset in</span>
+        <span class="mono" id="reset-timer">--:--:--</span>
+      </div>
+    </section>
+
+    <hr class="divider">
+
+    <!-- Claude Hours Heatmap -->
+    <section>
+      <div class="section-header">
+        <h2>Claude Hours</h2>
+        <span class="section-meta" id="heatmap-range">Last 8 weeks</span>
+      </div>
+      <div class="heatmap-wrap">
+        <div class="heatmap-scroll">
+          <div class="heatmap-grid" id="hours-heatmap"></div>
+        </div>
+        <div class="heatmap-footer">
+          <span class="heatmap-hint">Local time. Hover a cell for exact messages.</span>
+          <div class="heatmap-legend" aria-label="Heatmap legend">
+            <span>Less</span>
+            <span class="heat-cell level-0"></span>
+            <span class="heat-cell level-1"></span>
+            <span class="heat-cell level-2"></span>
+            <span class="heat-cell level-3"></span>
+            <span class="heat-cell level-4"></span>
+            <span>More</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <hr class="divider">
+
+    <!-- Daily Breakdown -->
+    <section>
+      <div class="section-header">
+        <h2>Daily Breakdown</h2>
+        <span class="section-meta" id="history-count">14 days</span>
+      </div>
+      <table id="history-table">
+        <thead>
+          <tr>
+            <th class="col-date">Date</th>
+            <th class="col-num">Sent</th>
+            <th class="col-num">Recv</th>
+            <th class="col-num">Tokens</th>
+            <th class="col-num">Convs</th>
+            <th class="col-bar">Usage</th>
+          </tr>
+        </thead>
+        <tbody id="history-body">
+          <tr class="empty-row"><td colspan="6">No data yet.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <hr class="divider">
+
+    <!-- Recent Conversations -->
+    <section>
+      <div class="section-header">
+        <h2>Recent Conversations</h2>
+        <span class="section-meta" id="conv-count">0</span>
+      </div>
+      <table id="conv-table">
+        <thead>
+          <tr>
+            <th class="col-title">Title</th>
+            <th class="col-num">Messages</th>
+            <th class="col-num">Tokens</th>
+            <th class="col-date">Date</th>
+          </tr>
+        </thead>
+        <tbody id="conv-body">
+          <tr class="empty-row"><td colspan="4">No conversations yet.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <div class="credit">Made by <a href="https://github.com/visheshj111" target="_blank">Vishesh Jangid</a> &middot; <a href="https://visheshj111.github.io/portfolio/" target="_blank">Portfolio</a></div>
+  </div>
+  <script src="dashboard.js"></script>
+</body>
+</html>
