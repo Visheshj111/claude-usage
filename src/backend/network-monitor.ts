@@ -29,6 +29,12 @@ let _cutOrgId: string | null = null;
 let _onOrgIdDetected: ((orgId: string) => void) | null = null;
 
 export function getTrackedOrgId(): string | null {
+  if (!_cutOrgId) {
+    const match = document.cookie.match(/\blastActiveOrg=([^;]+)/);
+    if (match) {
+      _cutOrgId = match[1];
+    }
+  }
   return _cutOrgId;
 }
 
@@ -37,6 +43,15 @@ export function setOnOrgIdDetected(cb: (orgId: string) => void): void {
   // If orgId already available, fire immediately
   if (_cutOrgId) cb(_cutOrgId);
 }
+
+// Listen for orgId extracted by watcher.js in the main world
+window.addEventListener("cut-org-id", ((e: CustomEvent<string>) => {
+  const newOrgId = e.detail;
+  if (newOrgId && newOrgId !== _cutOrgId) {
+    _cutOrgId = newOrgId;
+    _onOrgIdDetected?.(newOrgId);
+  }
+}) as EventListener);
 
 // Claude's actual API endpoints (updated from generic guesses)
 const CLAUDE_API_PATTERNS = [

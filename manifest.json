@@ -17,7 +17,8 @@
     "webRequest"
   ],
   "host_permissions": [
-    "https://claude.ai/*"
+    "https://claude.ai/*",
+    "https://api.anthropic.com/*"
   ],
   "web_accessible_resources": [
     {

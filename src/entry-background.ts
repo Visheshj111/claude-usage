@@ -501,6 +501,147 @@ const QUOTA_HEADERS_BG = [
 const pendingTabQuota = new Map<number, NetworkQuota>();
 
 if (typeof chrome.webRequest !== "undefined" && chrome.webRequest) {
+  // ── Shared state ──
+  let _bgOrgId: string | null = null;
+  // Track pending completions: key = "orgId:conversationId", value = tabId
+  const _pendingCompletions = new Map<string, number>();
+
+  /**
+   * Fetch /usage from the background (has cookie access) and push to
+   * ALL open claude.ai tabs. This is the core of real-time accuracy:
+   * called after every completion finishes.
+   */
+  async function bgFetchAndPushUsageToAllTabs(orgId: string): Promise<void> {
+    try {
+      const resp = await fetch(`https://claude.ai/api/organizations/${orgId}/usage`, {
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!resp.ok) return;
+      const data = await resp.json();
+
+      // Push to ALL claude.ai tabs, not just the one that sent the request
+      const tabs = await chrome.tabs.query({ url: "https://claude.ai/*" });
+      for (const tab of tabs) {
+        if (tab.id) {
+          chrome.tabs.sendMessage(tab.id, { type: "BG_USAGE_PUSH", data, orgId }).catch(() => {});
+        }
+      }
+    } catch {
+      // Network error — content script's own polling will recover
+    }
+  }
+
+  /**
+   * Same but targets a single tab (for initial load).
+   */
+  async function bgFetchAndPushUsageToTab(tabId: number, orgId: string): Promise<void> {
+    try {
+      const resp = await fetch(`https://claude.ai/api/organizations/${orgId}/usage`, {
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      chrome.tabs.sendMessage(tabId, { type: "BG_USAGE_PUSH", data, orgId }).catch(() => {});
+    } catch {
+      // ignore
+    }
+  }
+
+  // ── 1. onBeforeRequest: detect when a message is being sent ──
+  // Fires on /completion and /retry_completion POSTs — this means the user
+  // just sent a prompt. We store the orgId+conversationId so onCompleted
+  // knows to re-fetch usage when the response finishes.
+  (chrome.webRequest.onBeforeRequest as any).addListener(
+    (details: any): void => {
+      if (details.tabId < 0) return;
+      const url: string = details.url || "";
+
+      // Extract orgId from any API URL
+      const orgMatch = url.match(/\/api\/organizations\/([^/]+)/);
+      if (orgMatch) {
+        const orgId = orgMatch[1];
+        if (orgId !== _bgOrgId) {
+          _bgOrgId = orgId;
+          // First time seeing this org — immediately fetch usage for fast init
+          bgFetchAndPushUsageToTab(details.tabId, orgId);
+        }
+      }
+
+      // Track completion requests so we know when to re-fetch
+      if (details.method === "POST" &&
+          (url.includes("/completion") || url.includes("/retry_completion"))) {
+        const urlParts = url.split("/");
+        const orgIdx = urlParts.indexOf("organizations");
+        const convIdx = urlParts.indexOf("chat_conversations");
+        if (orgIdx !== -1 && convIdx !== -1) {
+          const orgId = urlParts[orgIdx + 1];
+          const convId = urlParts[convIdx + 1];
+          const key = `${orgId}:${convId}`;
+          _pendingCompletions.set(key, details.tabId);
+        }
+      }
+    },
+    {
+      urls: [
+        "https://claude.ai/api/organizations/*/chat_conversations/*/completion",
+        "https://claude.ai/api/organizations/*/chat_conversations/*/retry_completion",
+        "https://claude.ai/api/organizations/*",
+      ],
+    },
+  );
+
+  // ── 2. onCompleted: detect when Claude's response has finished ──
+  // When a /chat_conversations/* request completes (the SSE stream ends),
+  // immediately re-fetch /usage and push the updated percentage to all tabs.
+  (chrome.webRequest.onCompleted as any).addListener(
+    (details: any): void => {
+      if (details.tabId < 0) return;
+      const url: string = details.url || "";
+
+      // Check if this is a conversation response completing
+      const urlParts = url.split("/");
+      const orgIdx = urlParts.indexOf("organizations");
+      const convIdx = urlParts.indexOf("chat_conversations");
+
+      if (orgIdx !== -1 && convIdx !== -1) {
+        const orgId = urlParts[orgIdx + 1];
+        const convId = urlParts[convIdx + 1]?.split("?")[0]; // strip query params
+
+        // Check if this was a tracked completion (message response finished)
+        const key = `${orgId}:${convId}`;
+        if (_pendingCompletions.has(key)) {
+          _pendingCompletions.delete(key);
+          // The SSE stream just ended — Claude's response is done.
+          // Re-fetch /usage now for an accurate, up-to-date percentage.
+          bgFetchAndPushUsageToAllTabs(orgId);
+        }
+      }
+    },
+    {
+      urls: [
+        "https://claude.ai/api/organizations/*/chat_conversations/*",
+      ],
+    },
+    ["responseHeaders"],
+  );
+
+  // ── 3. tabs.onUpdated: fetch usage when a claude.ai tab finishes loading ──
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.status === "complete" && tab.url?.startsWith("https://claude.ai")) {
+      chrome.cookies?.get({ name: "lastActiveOrg", url: "https://claude.ai" })
+        .then((cookie) => {
+          if (cookie?.value) {
+            _bgOrgId = cookie.value;
+            bgFetchAndPushUsageToTab(tabId, cookie.value);
+          }
+        })
+        .catch(() => {});
+    }
+  });
+
+  // ── 4. onHeadersReceived: extract rate-limit headers (existing) ──
   (chrome.webRequest.onHeadersReceived as any).addListener(
     (details: any): void => {
       if (details.tabId < 0) return;
@@ -674,6 +815,29 @@ async function init(): Promise<void> {
       case "RESET_STATE":
         resetState().then(() => sendResponse({ success: true }));
         return true;
+
+      case "FORCE_FETCH_USAGE":
+        if (message.orgId) {
+          bgFetchAndPushUsageToAllTabs(message.orgId);
+          sendResponse({ success: true });
+        } else if (_bgOrgId) {
+          bgFetchAndPushUsageToAllTabs(_bgOrgId);
+          sendResponse({ success: true });
+        } else {
+          chrome.cookies?.get({ name: "lastActiveOrg", url: "https://claude.ai" })
+            .then((cookie) => {
+              if (cookie?.value) {
+                _bgOrgId = cookie.value;
+                bgFetchAndPushUsageToAllTabs(cookie.value);
+                sendResponse({ success: true });
+              } else {
+                sendResponse({ success: false });
+              }
+            })
+            .catch(() => sendResponse({ success: false }));
+          return true;
+        }
+        break;
 
       case "GET_ORG_ID":
         chrome.cookies

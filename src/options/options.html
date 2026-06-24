@@ -58,8 +58,21 @@
       <p class="desc">Browser notification at 50/75/90/100% usage.</p>
       <label class="check">
         <input type="checkbox" id="show-notifications">
-        <span>Enable milestones</span>
+        <span>Enable Notifications</span>
       </label>
+    </section>
+
+    <section>
+      <h2>Prompt Refiner</h2>
+      <p class="desc">Opt-in feature to shorten and refine your prompts before sending using Anthropic's API. <strong>Privacy Notice:</strong> If enabled, the text you enter in the composer will be sent directly from your browser to Anthropic's API when you click the 'Refine' button. Your API key is stored locally in your browser and never sent to our servers.</p>
+      <label class="check">
+        <input type="checkbox" id="refiner-enabled">
+        <span>Enable Prompt Refiner (Opt-in)</span>
+      </label>
+      <div class="field" style="margin-top: 10px;">
+        <label for="anthropic-api-key">Anthropic API Key</label>
+        <input type="password" id="anthropic-api-key" placeholder="sk-ant-...">
+      </div>
     </section>
 
     <section>

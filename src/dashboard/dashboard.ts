@@ -11,6 +11,16 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   refresh();
   setInterval(refresh, 10000);
+  
+  document.getElementById('db-force-reload')?.addEventListener('click', async () => {
+    const btn = document.getElementById('db-force-reload');
+    if (btn) btn.style.transform = 'rotate(180deg)';
+    await chrome.runtime.sendMessage({ type: 'FORCE_FETCH_USAGE' });
+    await refresh();
+    if (btn) {
+      setTimeout(() => { btn.style.transform = ''; }, 200);
+    }
+  });
 });
 
 async function applyDashboardTheme() {

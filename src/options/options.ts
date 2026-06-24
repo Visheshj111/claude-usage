@@ -2,16 +2,18 @@ export {};
 
 document.addEventListener('DOMContentLoaded', async () => {
   const { settings } = await chrome.storage.local.get('settings');
-  const s = settings || {};
+  const s: any = settings || {};
   const themeMode = s.themeMode || 'auto';
   applyOptionsTheme(themeMode);
 
-  document.getElementById('limit-messages').value = s.limits?.dailyMessages ?? 45;
-  document.getElementById('limit-tokens').value = s.limits?.dailyTokens ?? 90000;
-  document.getElementById('reset-period').value = s.resetPeriod || '5h';
-  document.getElementById('token-method').value = s.tokenEstimationMethod || 'chars/4';
-  document.getElementById('show-notifications').checked = s.showNotifications !== false;
-  document.getElementById('theme-mode').value = themeMode;
+  (document.getElementById('limit-messages') as HTMLInputElement).value = s.limits?.dailyMessages ?? 45;
+  (document.getElementById('limit-tokens') as HTMLInputElement).value = s.limits?.dailyTokens ?? 90000;
+  (document.getElementById('reset-period') as HTMLSelectElement).value = s.resetPeriod || '5h';
+  (document.getElementById('token-method') as HTMLSelectElement).value = s.tokenEstimationMethod || 'chars/4';
+  (document.getElementById('show-notifications') as HTMLInputElement).checked = s.showNotifications !== false;
+  (document.getElementById('refiner-enabled') as HTMLInputElement).checked = s.refinerEnabled === true;
+  (document.getElementById('anthropic-api-key') as HTMLInputElement).value = s.anthropicApiKey || '';
+  (document.getElementById('theme-mode') as HTMLSelectElement).value = themeMode;
 
   document.getElementById('save-btn').addEventListener('click', saveSettings);
   document.getElementById('reset-all-btn').addEventListener('click', resetAllData);
@@ -27,15 +29,18 @@ function applyOptionsTheme(themeMode) {
 
 async function saveSettings() {
   const { settings: existing } = await chrome.storage.local.get('settings');
+  const existingSettings: any = existing || {};
   const settings = {
-    resetPeriod: document.getElementById('reset-period').value,
-    tokenEstimationMethod: document.getElementById('token-method').value,
-    showNotifications: document.getElementById('show-notifications').checked,
-    themeMode: document.getElementById('theme-mode').value,
+    resetPeriod: (document.getElementById('reset-period') as HTMLSelectElement).value,
+    tokenEstimationMethod: (document.getElementById('token-method') as HTMLSelectElement).value,
+    showNotifications: (document.getElementById('show-notifications') as HTMLInputElement).checked,
+    refinerEnabled: (document.getElementById('refiner-enabled') as HTMLInputElement).checked,
+    anthropicApiKey: (document.getElementById('anthropic-api-key') as HTMLInputElement).value,
+    themeMode: (document.getElementById('theme-mode') as HTMLSelectElement).value,
     limits: {
-      dailyMessages: parseInt(document.getElementById('limit-messages').value, 10) || 45,
-      dailyTokens: parseInt(document.getElementById('limit-tokens').value, 10) || 90000,
-      sessionWindowMs: existing?.limits?.sessionWindowMs ?? (5 * 60 * 60 * 1000),
+      dailyMessages: parseInt((document.getElementById('limit-messages') as HTMLInputElement).value, 10) || 45,
+      dailyTokens: parseInt((document.getElementById('limit-tokens') as HTMLInputElement).value, 10) || 90000,
+      sessionWindowMs: existingSettings.limits?.sessionWindowMs ?? (5 * 60 * 60 * 1000),
     },
   };
 

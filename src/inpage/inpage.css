@@ -393,3 +393,219 @@
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
+
+/* ── Refine Button ── */
+#cut-refine-btn {
+  position: fixed;
+  z-index: 2147483645;
+  height: 26px;
+  padding: 0 10px;
+  background: var(--cut-bg);
+  border: 0.5px solid var(--cut-border2);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: var(--cut-font);
+  color: var(--cut-accent);
+  cursor: pointer;
+  user-select: none;
+  display: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+
+#cut-refine-btn:hover {
+  background: var(--cut-bg2);
+  transform: translateY(-1px);
+}
+
+#cut-refine-btn.loading {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ── Refine Overlay ── */
+#cut-refine-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483646;
+  background: rgba(0,0,0,0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(2px);
+}
+
+#cut-refine-card {
+  background: var(--cut-bg);
+  border: 0.5px solid var(--cut-border2);
+  border-radius: 14px;
+  width: 640px;
+  max-width: calc(100vw - 40px);
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+}
+
+.cut-refine-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px 10px;
+  border-bottom: 0.5px solid var(--cut-border);
+}
+
+.cut-refine-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--cut-text);
+  flex: 1;
+}
+
+.cut-refine-savings {
+  font-size: 11px;
+  font-family: var(--cut-mono);
+  font-weight: 500;
+  color: var(--cut-safe);
+  background: rgba(29,158,117,0.08);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.cut-refine-close {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--cut-text3);
+  line-height: 1;
+}
+
+.cut-refine-close:hover {
+  background: var(--cut-bg2);
+}
+
+.cut-refine-body {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  overflow: hidden;
+  min-height: 120px;
+  max-height: 320px;
+}
+
+.cut-refine-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 10px 14px;
+}
+
+.cut-refine-col-label {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--cut-text3);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cut-refine-tokens {
+  font-family: var(--cut-mono);
+  font-size: 10px;
+  color: var(--cut-text3);
+  background: var(--cut-bg2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 400;
+}
+
+.cut-refine-tokens-saved {
+  color: var(--cut-safe);
+}
+
+.cut-refine-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--cut-text2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.cut-refine-text-refined {
+  color: var(--cut-text);
+}
+
+.cut-refine-divider {
+  width: 0.5px;
+  background: var(--cut-border);
+  flex-shrink: 0;
+  margin: 10px 0;
+}
+
+.cut-refine-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-top: 0.5px solid var(--cut-border);
+  gap: 8px;
+}
+
+.cut-refine-footer-right {
+  display: flex;
+  gap: 6px;
+}
+
+.cut-refine-btn-secondary {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 0.5px solid var(--cut-border2);
+  background: none;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--cut-text2);
+  cursor: pointer;
+  font-family: var(--cut-font);
+}
+
+.cut-refine-btn-secondary:hover {
+  background: var(--cut-bg2);
+}
+
+.cut-refine-btn-primary {
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 6px;
+  border: none;
+  background: var(--cut-accent);
+  font-size: 11px;
+  font-weight: 500;
+  color: #fff;
+  cursor: pointer;
+  font-family: var(--cut-font);
+}
+
+.cut-refine-btn-primary:hover {
+  opacity: 0.9;
+}
+
+.cut-refine-status {
+  font-size: 11px;
+  color: var(--cut-text3);
+  text-align: center;
+  padding: 6px 14px;
+  border-top: 0.5px solid var(--cut-border);
+}

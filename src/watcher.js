@@ -5,6 +5,10 @@
     try {
       var url = typeof i === 'string' ? i : i instanceof URL ? i.href : i.url;
       if (url && /claude\.ai\/api\//.test(url)) {
+        var orgMatch = url.match(/\/api\/organizations\/([^/]+)/);
+        if (orgMatch) {
+          window.dispatchEvent(new CustomEvent('cut-org-id', {detail: orgMatch[1]}));
+        }
         respPromise.then(function(resp) {
           var ct = resp.headers.get('content-type') || '';
           if (ct.indexOf('text/event-stream') !== -1) {

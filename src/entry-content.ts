@@ -18,6 +18,8 @@ import { initState, getState, onChange, startCountdownTicker, feedDetection, set
 import { runDetection, handleNetworkQuota, startPeriodicScan, estimateUsage } from "./backend/tracker";
 import { interceptFetch, interceptXHR, getTrackedOrgId, setOnOrgIdDetected } from "./backend/network-monitor";
 import type { DetectedUsage, PlanTier } from "./backend/types";
+import { initPromptRefiner } from "./inpage/prompt-refiner";
+import { refineLocal, refineWithAPI, RefinementResult } from './refiner';
 
 // ── Old tracking state ──
 const TRACK = {
@@ -36,6 +38,9 @@ const TRACK = {
   sessionStarted: false,
   sessionCheckTimer: null as ReturnType<typeof setInterval> | null,
   uiUpdateInterval: null as ReturnType<typeof setInterval> | null,
+  inputEl: null as HTMLElement | null,
+  lastRefinement: null as RefinementResult | null,
+  refineDeepInProgress: false,
 };
 
 const MESSAGE_SELECTORS = [
@@ -298,6 +303,75 @@ function parseWeeklyField(obj: Record<string, unknown>): import("./backend/types
   };
 }
 
+/**
+ * Handle usage data pushed proactively from the background service worker.
+ * This is the same parsing logic as fetchUsageFromAPI but skips orgId
+ * resolution and the fetch — the background already did both.
+ */
+function handleBgUsagePush(data: Record<string, unknown>, orgId: string): void {
+  if (!data || !data.five_hour || typeof data.five_hour !== "object") return;
+
+  setApiConnected(true);
+  
+  // Immediately inform the network monitor of the orgId
+  window.dispatchEvent(new CustomEvent("cut-org-id", { detail: orgId }));
+
+  const fh = data.five_hour as Record<string, unknown>;
+  const detected: DetectedUsage = { source: "network", confidence: 0.95 };
+
+  if (typeof fh.utilization === "number") {
+    detected.usagePercent = fh.utilization;
+  }
+  if (typeof fh.max_messages === "number" && fh.max_messages > 0) {
+    detected.sessionLimit = fh.max_messages;
+    if (typeof fh.utilization === "number") {
+      const used = Math.round((fh.utilization / 100) * fh.max_messages);
+      detected.remainingMessages = fh.max_messages - used;
+    }
+  }
+  if (typeof fh.resets_at === "string") {
+    const ts = new Date(fh.resets_at).getTime();
+    if (!isNaN(ts)) detected.resetTimestamp = ts;
+  }
+  if (fh.utilization !== undefined && Number(fh.utilization) >= 100) {
+    detected.isRateLimited = true;
+  }
+
+  if (data.maxed && typeof data.maxed === "object") {
+    const mx = data.maxed as Record<string, unknown>;
+    detected.limitType = "hard";
+    if (typeof mx.resets_at === "string") {
+      const ts = new Date(mx.resets_at).getTime();
+      if (!isNaN(ts)) { detected.hardLimitResetAt = ts; detected.resetTimestamp = ts; }
+    }
+    if (typeof mx.messages_used === "number" && typeof fh.max_messages === "number" && fh.max_messages > 0) {
+      detected.sessionMessagesUsed = mx.messages_used as number;
+      detected.sessionLimit = fh.max_messages as number;
+    }
+    detected.isRateLimited = true;
+  } else {
+    detected.limitType = "soft";
+  }
+
+  if (data.seven_day && typeof data.seven_day === "object") {
+    const w = parseWeeklyField(data.seven_day as Record<string, unknown>);
+    if (w) detected.weeklyUsage = w;
+  }
+  if (data.seven_day_sonnet && typeof data.seven_day_sonnet === "object") {
+    const w = parseWeeklyField(data.seven_day_sonnet as Record<string, unknown>);
+    if (w) detected.weeklySonnetUsage = w;
+  }
+  if (data.seven_day_opus && typeof data.seven_day_opus === "object") {
+    const w = parseWeeklyField(data.seven_day_opus as Record<string, unknown>);
+    if (w) detected.weeklyOpusUsage = w;
+  }
+
+  // Also feed orgId and plan info
+  detected.orgId = orgId;
+  feedDetection(detected);
+  fetchPlanInfo(orgId);
+}
+
 // Peak hours per Anthropic's March 2026 capacity announcement: weekdays
 // 8am-2pm ET. Hardcoding this is inherently fragile — Anthropic could change
 // or remove this policy at any time with no API signal. Treat this as a
@@ -386,8 +460,7 @@ async function init(): Promise<void> {
   injectStyles();
   injectUI();
 
-  // 8. Load all virtualized messages so the initial scan counts everything
-  await scrollToLoadAllMessages();
+  // 8. (Removed blocking scroll to load all messages to improve startup performance)
 
   // 9. Old: start tracking
   processPage();
@@ -417,9 +490,11 @@ async function init(): Promise<void> {
   const orgIdForPlan = resolveOrgId();
   orgIdForPlan.then((oid) => { if (oid) fetchPlanInfo(oid); });
 
-  // Fast retry: poll every 3s for the first 30s to catch orgId as soon as it's available
+  // Long-running polling: fetch accurate usage data from Claude's /usage endpoint every 30s
   const usageApiInterval = setInterval(fetchUsageFromAPI, 30000);
   cleanupFns.push(() => clearInterval(usageApiInterval));
+  
+  // Fast retry: poll every 3s for the first 30s to catch orgId as soon as it's available
   const fastRetryInterval = setInterval(() => {
     fetchUsageFromAPI();
   }, 3000);
@@ -452,6 +527,13 @@ async function init(): Promise<void> {
     attributeFilter: ["aria-valuenow", "aria-valuemax", "style", "class"],
   });
   cleanupFns.push(() => domObserver.disconnect());
+  cleanupFns.push(() => {
+    document.getElementById('cut-refine-btn')?.remove();
+    document.getElementById('cut-refine-overlay')?.remove();
+  });
+
+  // 12. Initialize prompt refiner (opt-in feature)
+  initPromptRefiner();
 }
 
 // ── Old: Page / URL Detection ──
@@ -496,6 +578,7 @@ function checkUrlChange(): void {
 }
 
 function onUrlChanged(): void {
+  TRACK.inputEl = null;
   TRACK.conversationTitle = extractTitle();
   processPage();
   runDetection("navigation");
@@ -658,6 +741,7 @@ function injectUI(): void {
           <span class="cut-header-label">Claude usage</span>
           <div class="cut-panel-actions">
             <span class="cut-badge-sm" id="cut-badge-sm">0%</span>
+            <span id="cut-force-reload" class="cut-header-btn" title="Reload usage">↻</span>
             <span id="cut-export" class="cut-header-btn" title="Export">⎋</span>
             <span id="cut-open-settings" class="cut-header-btn" title="Settings">⚙</span>
             <span id="cut-toggle-min" class="cut-header-btn" title="Minimize">–</span>
@@ -722,6 +806,47 @@ function injectUI(): void {
     </div>
   `;
 
+  // Part A — Button injection
+  const refineBtn = document.createElement('button');
+  refineBtn.id = 'cut-refine-btn';
+  refineBtn.title = 'Refine prompt (save credits)';
+  refineBtn.innerHTML = '✦ Refine';
+  document.body.appendChild(refineBtn);
+
+  // Part B — Result overlay
+  const overlay = document.createElement('div');
+  overlay.id = 'cut-refine-overlay';
+  overlay.style.display = 'none';
+  overlay.innerHTML = `
+    <div id="cut-refine-card">
+      <div class="cut-refine-header">
+        <span class="cut-refine-title">Refined prompt</span>
+        <div class="cut-refine-savings" id="cut-refine-savings">Saved 0 tokens</div>
+        <button class="cut-refine-close" id="cut-refine-close">×</button>
+      </div>
+      <div class="cut-refine-body">
+        <div class="cut-refine-col">
+          <div class="cut-refine-col-label">Original <span class="cut-refine-tokens" id="cut-orig-tokens">~0 tokens</span></div>
+          <div class="cut-refine-text" id="cut-orig-text"></div>
+        </div>
+        <div class="cut-refine-divider"></div>
+        <div class="cut-refine-col">
+          <div class="cut-refine-col-label">Refined <span class="cut-refine-tokens cut-refine-tokens-saved" id="cut-refined-tokens">~0 tokens</span></div>
+          <div class="cut-refine-text cut-refine-text-refined" id="cut-refined-text"></div>
+        </div>
+      </div>
+      <div class="cut-refine-footer">
+        <button class="cut-refine-btn-secondary" id="cut-refine-deep">Deep Refine (API)</button>
+        <div class="cut-refine-footer-right">
+          <button class="cut-refine-btn-secondary" id="cut-refine-dismiss">Dismiss</button>
+          <button class="cut-refine-btn-primary" id="cut-refine-accept">Use refined ↵</button>
+        </div>
+      </div>
+      <div class="cut-refine-status" id="cut-refine-status" style="display:none"></div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
   attachUIEvents();
   chrome.storage.local.get("settings").then(({ settings }) => {
     if (settings?.themeMode) detectTheme(settings.themeMode);
@@ -737,6 +862,8 @@ function detectTheme(mode?: string): void {
   else isDark = document.documentElement.classList.contains("dark")
     || window.matchMedia("(prefers-color-scheme: dark)").matches;
   container.classList.toggle("cut-dark", isDark);
+  document.getElementById("cut-refine-btn")?.classList.toggle("cut-dark", isDark);
+  document.getElementById("cut-refine-overlay")?.classList.toggle("cut-dark", isDark);
 }
 
 function attachUIEvents(): void {
@@ -752,7 +879,7 @@ function attachUIEvents(): void {
   get("cut-badge")!.addEventListener("click", () => {
     get("cut-widget")!.classList.remove("cut-collapsed");
     get("cut-widget")!.classList.add("cut-expanded");
-    get("cut-panel")!.style.display = "";
+    get("cut-panel")!.style.display = "block";
     get("cut-badge")!.style.display = "none";
   });
   get("cut-open-popup")!.addEventListener("click", () => {
@@ -767,6 +894,103 @@ function attachUIEvents(): void {
     }
   });
   get("cut-export")!.addEventListener("click", handleWidgetExport);
+  get("cut-force-reload")?.addEventListener("click", async () => {
+    const btn = get("cut-force-reload");
+    if (btn) {
+      btn.style.transition = 'transform 0.2s ease';
+      btn.style.transform = 'rotate(180deg)';
+    }
+    runDetection("manual");
+    const orgId = getTrackedOrgId();
+    if (orgId) {
+      await sendRuntimeMessage({ type: "FORCE_FETCH_USAGE", orgId });
+    }
+    if (btn) {
+      setTimeout(() => { btn.style.transform = ''; }, 200);
+    }
+  });
+
+  // Prompt Refinement Wiring
+  const refineBtn = document.getElementById("cut-refine-btn");
+  if (refineBtn) {
+    refineBtn.addEventListener("click", () => {
+      const text = getInputText();
+      if (!text || text.length <= 20) return;
+      const btn = refineBtn as HTMLButtonElement;
+      btn.textContent = 'Refining…';
+      btn.classList.add('loading');
+      try {
+        const result = refineLocal(text);
+        showRefinementOverlay(result);
+      } finally {
+        btn.innerHTML = '✦ Refine';
+        btn.classList.remove('loading');
+      }
+    });
+  }
+
+  const acceptBtn = document.getElementById("cut-refine-accept");
+  if (acceptBtn) {
+    acceptBtn.addEventListener("click", () => {
+      if (!TRACK.lastRefinement) return;
+      setInputText(TRACK.lastRefinement.refined);
+      hideRefinementOverlay();
+    });
+  }
+
+  const dismissBtn = document.getElementById("cut-refine-dismiss");
+  if (dismissBtn) dismissBtn.addEventListener("click", hideRefinementOverlay);
+  const closeBtn = document.getElementById("cut-refine-close");
+  if (closeBtn) closeBtn.addEventListener("click", hideRefinementOverlay);
+
+  const overlay = document.getElementById("cut-refine-overlay");
+  if (overlay) {
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) hideRefinementOverlay();
+    });
+  }
+
+  const deepBtn = document.getElementById("cut-refine-deep") as HTMLButtonElement;
+  if (deepBtn) {
+    deepBtn.addEventListener("click", async () => {
+      if (TRACK.refineDeepInProgress) return;
+      const orgId = getTrackedOrgId();
+      if (!orgId) {
+        const status = document.getElementById('cut-refine-status') as HTMLElement;
+        status.textContent = "Org ID not detected yet — try again in a moment.";
+        status.style.display = '';
+        return;
+      }
+      TRACK.refineDeepInProgress = true;
+      deepBtn.textContent = 'Refining…';
+      deepBtn.disabled = true;
+      const originalText = TRACK.lastRefinement?.original || getInputText();
+
+      try {
+        const result = await refineWithAPI(originalText, orgId);
+        showRefinementOverlay(result);
+        (document.getElementById('cut-refine-status') as HTMLElement).style.display = 'none';
+      } catch (err) {
+        const status = document.getElementById('cut-refine-status') as HTMLElement;
+        status.textContent = 'API refine failed — showing local result.';
+        status.style.display = '';
+      } finally {
+        deepBtn.textContent = 'Deep Refine (API)';
+        deepBtn.disabled = false;
+        TRACK.refineDeepInProgress = false;
+      }
+    });
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const ol = document.getElementById('cut-refine-overlay');
+      if (ol && ol.style.display !== 'none') {
+        hideRefinementOverlay();
+        e.stopPropagation();
+      }
+    }
+  });
 
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => detectTheme());
   const darkObserver = new MutationObserver(() => detectTheme());
@@ -781,7 +1005,7 @@ function toggleMinimize(): void {
   if (isMin) {
     w.classList.remove("cut-collapsed");
     w.classList.add("cut-expanded");
-    panel.style.display = "";
+    panel.style.display = "block";
     badge.style.display = "none";
   } else {
     w.classList.add("cut-collapsed");
@@ -793,12 +1017,108 @@ function toggleMinimize(): void {
 
 // ── Old: UI Update ──
 async function updateUI(): Promise<void> {
+  checkRefineButton();
   try {
     const result = await sendRuntimeMessage<Record<string, unknown>>({ type: "GET_ALL_DATA" });
     if (!result) return;
     renderUI(result);
   } catch {
     // ignore
+  }
+}
+
+function findInputEl(): HTMLElement | null {
+  const selectors = [
+    '[data-testid="user-input"]',
+    'div.ProseMirror[contenteditable="true"]',
+    'div[contenteditable="true"][role="textbox"]',
+    'div[contenteditable="true"]'
+  ];
+  for (const sel of selectors) {
+    const el = document.querySelector(sel);
+    if (el) return el as HTMLElement;
+  }
+  return null;
+}
+
+function getInputText(): string {
+  if (!TRACK.inputEl || !document.body.contains(TRACK.inputEl)) {
+    TRACK.inputEl = findInputEl();
+  }
+  if (!TRACK.inputEl) return '';
+  return TRACK.inputEl.textContent?.trim() || '';
+}
+
+function setInputText(text: string): void {
+  if (!TRACK.inputEl) return;
+  TRACK.inputEl.textContent = text;
+  TRACK.inputEl.dispatchEvent(new InputEvent('input', { bubbles: true }));
+  TRACK.inputEl.dispatchEvent(new Event('change', { bubbles: true }));
+  
+  const range = document.createRange();
+  const sel = window.getSelection();
+  range.selectNodeContents(TRACK.inputEl);
+  range.collapse(false);
+  sel?.removeAllRanges();
+  sel?.addRange(range);
+  TRACK.inputEl.focus();
+}
+
+function showRefinementOverlay(result: RefinementResult): void {
+  const overlay = document.getElementById('cut-refine-overlay');
+  if (!overlay) return;
+  overlay.style.display = 'flex';
+  
+  (document.getElementById('cut-orig-text') as HTMLElement).textContent = result.original;
+  (document.getElementById('cut-refined-text') as HTMLElement).textContent = result.refined;
+  (document.getElementById('cut-orig-tokens') as HTMLElement).textContent = '~' + result.originalTokenEstimate + ' tokens';
+  (document.getElementById('cut-refined-tokens') as HTMLElement).textContent = '~' + result.refinedTokenEstimate + ' tokens';
+
+  const savingsEl = document.getElementById('cut-refine-savings') as HTMLElement;
+  const statusEl = document.getElementById('cut-refine-status') as HTMLElement;
+
+  if (result.tokensSaved > 0) {
+    savingsEl.textContent = 'Saved ~' + result.tokensSaved + ' tokens (' + result.percentSaved + '%)';
+    savingsEl.style.display = '';
+    statusEl.style.display = 'none';
+  } else {
+    savingsEl.style.display = 'none';
+    statusEl.textContent = "Already optimal — no changes needed.";
+    statusEl.style.display = '';
+  }
+
+  TRACK.lastRefinement = result;
+}
+
+function hideRefinementOverlay(): void {
+  const overlay = document.getElementById('cut-refine-overlay');
+  if (overlay) overlay.style.display = 'none';
+  const statusEl = document.getElementById('cut-refine-status');
+  if (statusEl) statusEl.style.display = 'none';
+  TRACK.refineDeepInProgress = false;
+}
+
+function checkRefineButton(): void {
+  const refineBtn = document.getElementById("cut-refine-btn");
+  if (!refineBtn) return;
+
+  if (!TRACK.inputEl || !document.body.contains(TRACK.inputEl)) {
+    TRACK.inputEl = findInputEl();
+  }
+
+  if (!TRACK.inputEl || !document.body.contains(TRACK.inputEl)) {
+    refineBtn.style.display = "none";
+    return;
+  }
+
+  const text = TRACK.inputEl.textContent?.trim() || "";
+  if (text.length > 20) {
+    refineBtn.style.display = "block";
+    const rect = TRACK.inputEl.getBoundingClientRect();
+    refineBtn.style.top = `${rect.top - 34}px`; // 26px height + 8px gap
+    refineBtn.style.left = `${rect.left}px`;
+  } else {
+    refineBtn.style.display = "none";
   }
 }
 
@@ -1132,6 +1452,10 @@ try {
           break;
         case "WEBREQUEST_QUOTA":
           handleNetworkQuota(msg.quota);
+          break;
+        case "BG_USAGE_PUSH":
+          // Background proactively fetched /usage and is pushing it to us
+          handleBgUsagePush(msg.data, msg.orgId);
           break;
         case "MANUAL_SCAN":
           runDetection("manual");
