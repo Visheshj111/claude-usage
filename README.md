@@ -1,1 +1,1 @@
-It tracks claude usage, it is a chrome extension dude.
+It tracks claude usage and can export the chats, it is a chrome extension dude.
