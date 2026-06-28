@@ -12,14 +12,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   (document.getElementById('token-method') as HTMLSelectElement).value = s.tokenEstimationMethod || 'chars/4';
   (document.getElementById('show-notifications') as HTMLInputElement).checked = s.showNotifications !== false;
   (document.getElementById('refiner-enabled') as HTMLInputElement).checked = s.refinerEnabled === true;
-  (document.getElementById('anthropic-api-key') as HTMLInputElement).value = s.anthropicApiKey || '';
   (document.getElementById('theme-mode') as HTMLSelectElement).value = themeMode;
 
-  document.getElementById('save-btn').addEventListener('click', saveSettings);
-  document.getElementById('reset-all-btn').addEventListener('click', resetAllData);
+  document.getElementById('save-btn')?.addEventListener('click', saveSettings);
+  document.getElementById('reset-all-btn')?.addEventListener('click', resetAllData);
 });
 
-function applyOptionsTheme(themeMode) {
+function applyOptionsTheme(themeMode: string): void {
   const mode = themeMode || 'auto';
   localStorage.setItem('themeMode', mode);
   const isDark = mode === 'dark' ||
@@ -35,7 +34,6 @@ async function saveSettings() {
     tokenEstimationMethod: (document.getElementById('token-method') as HTMLSelectElement).value,
     showNotifications: (document.getElementById('show-notifications') as HTMLInputElement).checked,
     refinerEnabled: (document.getElementById('refiner-enabled') as HTMLInputElement).checked,
-    anthropicApiKey: (document.getElementById('anthropic-api-key') as HTMLInputElement).value,
     themeMode: (document.getElementById('theme-mode') as HTMLSelectElement).value,
     limits: {
       dailyMessages: parseInt((document.getElementById('limit-messages') as HTMLInputElement).value, 10) || 45,
@@ -49,8 +47,8 @@ async function saveSettings() {
   await chrome.runtime.sendMessage({ type: 'SAVE_SETTINGS', data: settings });
 
   const status = document.getElementById('save-status');
-  status.textContent = 'Settings saved!';
-  setTimeout(() => { status.textContent = ''; }, 2000);
+  if (status) status.textContent = 'Settings saved!';
+  setTimeout(() => { if (status) status.textContent = ''; }, 2000);
 }
 
 async function resetAllData() {
@@ -60,6 +58,6 @@ async function resetAllData() {
   await chrome.runtime.sendMessage({ type: 'RESET_USAGE' });
 
   const status = document.getElementById('save-status');
-  status.textContent = 'All data deleted.';
-  setTimeout(() => { status.textContent = ''; }, 3000);
+  if (status) status.textContent = 'All data deleted.';
+  setTimeout(() => { if (status) status.textContent = ''; }, 3000);
 }

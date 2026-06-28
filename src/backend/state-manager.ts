@@ -199,8 +199,23 @@ export function clearRateLimit(): void {
  */
 export function setApiConnected(connected: boolean): void {
   const oldState = cloneUsage(currentState);
-  if (currentState.apiConnected === connected) return;
+  if (currentState.apiConnected === connected && currentState.apiErrorStatus === null) return;
   currentState.apiConnected = connected;
+  if (connected) currentState.apiErrorStatus = null; // clear any previous error
+  persistUsage(currentState);
+  emitChange(oldState);
+}
+
+/**
+ * Record a failed /usage API call with its HTTP status code.
+ * Sets apiConnected=false and stores the status so the popup can show
+ * a specific error (e.g. "API error 401" vs "API error 503").
+ */
+export function setApiError(status: number): void {
+  const oldState = cloneUsage(currentState);
+  if (!currentState.apiConnected && currentState.apiErrorStatus === status) return;
+  currentState.apiConnected = false;
+  currentState.apiErrorStatus = status;
   persistUsage(currentState);
   emitChange(oldState);
 }

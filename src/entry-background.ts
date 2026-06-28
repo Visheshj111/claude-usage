@@ -95,8 +95,8 @@ async function getSettings(): Promise<Settings> {
 
   settingsLoadPromise = (async () => {
     const { settings } = await chrome.storage.local.get("settings");
-    settingsCache = settings || DEFAULT_SETTINGS;
-    return settingsCache;
+    settingsCache = (settings as Settings) || DEFAULT_SETTINGS;
+    return settingsCache!;
   })();
 
   return settingsLoadPromise;
@@ -200,13 +200,14 @@ function pruneHourlyUsage(hourlyUsage: HourlyUsage): HourlyUsage {
 
 // ── Message Handlers ──
 async function handleUsageUpdate(data: Record<string, unknown>): Promise<{ success: boolean }> {
-  const { usage, conversations, hourlyUsage } = await chrome.storage.local.get(["usage", "conversations", "hourlyUsage"]);
+  const { usage: rawUsage, conversations: rawConvs, hourlyUsage: rawHourly } = await chrome.storage.local.get(["usage", "conversations", "hourlyUsage"]);
+  const usage = rawUsage as Record<string, DayUsage | PeriodUsage> | undefined;
   const today = getDateKey();
   const periodKey = getPeriodKey("daily");
 
-  const dayUsage = initDayUsage(usage?.[today]);
-  const periodUsage = initPeriodUsage(usage?.[periodKey]);
-  const conversationsDb: Record<string, ConversationEntry> = conversations || {};
+  const dayUsage = initDayUsage(usage?.[today] as DayUsage | undefined);
+  const periodUsage = initPeriodUsage(usage?.[periodKey] as PeriodUsage | undefined);
+  const conversationsDb: Record<string, ConversationEntry> = (rawConvs as Record<string, ConversationEntry>) || {};
   let hourlyMessageDelta = 0;
   const convId = data.conversationId as string | undefined;
 
@@ -282,7 +283,7 @@ async function handleUsageUpdate(data: Record<string, unknown>): Promise<{ succe
   if (hourlyMessageDelta > 0) {
     const now = new Date();
     const hour = now.getHours();
-    updatedHourlyUsage = pruneHourlyUsage(hourlyUsage || {});
+    updatedHourlyUsage = pruneHourlyUsage((rawHourly as HourlyUsage) || {});
     const hours = updatedHourlyUsage[today] || Array.from({ length: 24 }, () => 0);
     hours[hour] = (hours[hour] || 0) + hourlyMessageDelta;
     updatedHourlyUsage[today] = hours;
@@ -333,8 +334,8 @@ async function handleUsageUpdate(data: Record<string, unknown>): Promise<{ succe
 }
 
 async function handleSessionUpdate(data: { action: string } & Record<string, unknown>): Promise<{ success: boolean; session?: SessionData | null }> {
-  const { session } = await chrome.storage.local.get("session");
-  let s: SessionData | null = session || null;
+  const { session: rawSession } = await chrome.storage.local.get("session");
+  let s: SessionData | null = (rawSession as SessionData) || null;
 
   if (data.action === "start") {
     // Intentionally longer than Claude's 5h quota window so a genuinely new
@@ -377,25 +378,26 @@ async function handleSessionUpdate(data: { action: string } & Record<string, unk
 }
 
 async function getAllData(): Promise<Record<string, unknown>> {
-  const { usage, conversations, session } = await chrome.storage.local.get([
+  const { usage: rawUsage2, conversations: rawConvs, session: rawSession } = await chrome.storage.local.get([
     "usage", "conversations", "session",
   ]);
+  const usageObj = (rawUsage2 as Record<string, DayUsage | PeriodUsage>) || {};
   const currentSettings = await getSettings();
   const today = getDateKey();
-  const dayUsage = usage?.[today] || initDayUsage();
+  const dayUsage = (usageObj[today] as DayUsage) || initDayUsage();
   const periodKey = getPeriodKey(currentSettings.resetPeriod);
-  const periodUsage = usage?.[periodKey] || initPeriodUsage();
+  const periodUsage = (usageObj[periodKey] as PeriodUsage) || initPeriodUsage();
 
   const limits = currentSettings.limits || DEFAULT_SETTINGS.limits;
   const msgsUsed = dayUsage.messagesSent + dayUsage.messagesReceived;
-  const msgsRemaining = Math.max(0, limits.dailyMessages - msgsUsed);
   const tokensUsed = dayUsage.tokensSent + dayUsage.tokensReceived;
   const tokensRemaining = Math.max(0, limits.dailyTokens - tokensUsed);
 
   const backendState = getState();
+  const sessionStorageData = rawSession as { startTime?: number } | null;
   const windowStartTs = backendState.resetTimestamp
     ? backendState.resetTimestamp - (limits.sessionWindowMs || 5 * 60 * 60 * 1000)
-    : (session?.startTime as number | undefined) ?? undefined;
+    : sessionStorageData?.startTime ?? undefined;
   const nextReset = computeNextReset(currentSettings.resetPeriod, windowStartTs);
   const resetIn = nextReset - Date.now();
 
@@ -419,8 +421,8 @@ async function getAllData(): Promise<Record<string, unknown>> {
     nextReset,
     resetIn: Math.max(0, resetIn),
     limits,
-    conversations,
-    session,
+    conversations: rawConvs,
+    session: rawSession,
     settings: currentSettings,
     sessionPct,
     sessionLimit,
@@ -432,6 +434,7 @@ async function getAllData(): Promise<Record<string, unknown>> {
     countdownMs: backendState.countdownMs,
     confidence: backendState.confidence,
     apiConnected: backendState.apiConnected,
+    apiErrorStatus: backendState.apiErrorStatus,
     limitType: backendState.limitType,
     hardLimitResetAt: backendState.hardLimitResetAt,
     orgId: backendState.orgId,
@@ -455,7 +458,7 @@ async function getHistory(): Promise<[string, DayUsage][]> {
 
 async function getHourlyUsage(): Promise<HourlyUsage> {
   const { hourlyUsage } = await chrome.storage.local.get("hourlyUsage");
-  return pruneHourlyUsage(hourlyUsage || {});
+  return pruneHourlyUsage((hourlyUsage as HourlyUsage) || {});
 }
 
 const notifiedMilestones = new Set<number>();
@@ -500,59 +503,53 @@ const QUOTA_HEADERS_BG = [
 // Buffer recent quota per tab so content script can pick up after init
 const pendingTabQuota = new Map<number, NetworkQuota>();
 
-if (typeof chrome.webRequest !== "undefined" && chrome.webRequest) {
-  // ── Shared state ──
-  let _bgOrgId: string | null = null;
-  // Track pending completions: key = "orgId:conversationId", value = tabId
-  const _pendingCompletions = new Map<string, number>();
+// ── Module-level shared state for webRequest handlers ──
+// Declared here (outside the if-block) so the message handler and alarm
+// handler can reference them even if webRequest is unavailable.
+let _bgOrgId: string | null = null;
 
-  /**
-   * Fetch /usage from the background (has cookie access) and push to
-   * ALL open claude.ai tabs. This is the core of real-time accuracy:
-   * called after every completion finishes.
-   */
-  async function bgFetchAndPushUsageToAllTabs(orgId: string): Promise<void> {
-    try {
-      const resp = await fetch(`https://claude.ai/api/organizations/${orgId}/usage`, {
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!resp.ok) return;
-      const data = await resp.json();
-
-      // Push to ALL claude.ai tabs, not just the one that sent the request
-      const tabs = await chrome.tabs.query({ url: "https://claude.ai/*" });
-      for (const tab of tabs) {
-        if (tab.id) {
-          chrome.tabs.sendMessage(tab.id, { type: "BG_USAGE_PUSH", data, orgId }).catch(() => {});
-        }
+async function bgFetchAndPushUsageToAllTabs(orgId: string): Promise<void> {
+  try {
+    const resp = await fetch(`https://claude.ai/api/organizations/${orgId}/usage`, {
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const tabs = await chrome.tabs.query({ url: "https://claude.ai/*" });
+    for (const tab of tabs) {
+      if (tab.id) {
+        chrome.tabs.sendMessage(tab.id, { type: "BG_USAGE_PUSH", data, orgId }).catch(() => {});
       }
-    } catch {
-      // Network error — content script's own polling will recover
     }
+  } catch {
+    // Network error — content script's own polling will recover
   }
+}
 
-  /**
-   * Same but targets a single tab (for initial load).
-   */
-  async function bgFetchAndPushUsageToTab(tabId: number, orgId: string): Promise<void> {
-    try {
-      const resp = await fetch(`https://claude.ai/api/organizations/${orgId}/usage`, {
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!resp.ok) return;
-      const data = await resp.json();
-      chrome.tabs.sendMessage(tabId, { type: "BG_USAGE_PUSH", data, orgId }).catch(() => {});
-    } catch {
-      // ignore
-    }
+async function bgFetchAndPushUsageToTab(tabId: number, orgId: string): Promise<void> {
+  try {
+    const resp = await fetch(`https://claude.ai/api/organizations/${orgId}/usage`, {
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    chrome.tabs.sendMessage(tabId, { type: "BG_USAGE_PUSH", data, orgId }).catch(() => {});
+  } catch {
+    // ignore
   }
+}
 
+if (typeof chrome.webRequest !== "undefined" && chrome.webRequest) {
   // ── 1. onBeforeRequest: detect when a message is being sent ──
-  // Fires on /completion and /retry_completion POSTs — this means the user
-  // just sent a prompt. We store the orgId+conversationId so onCompleted
-  // knows to re-fetch usage when the response finishes.
+  // Fires on /completion and /retry_completion POSTs — the user just sent a
+  // prompt. We schedule an alarm that fires immediately (delayInMinutes: 0),
+  // which wakes the service worker even if it was suspended between now and
+  // delivery, then re-fetches /usage for all tabs.
+  // The old _pendingCompletions Map + onCompleted approach was dropped because:
+  //   a) The Map is lost when the SW sleeps between onBeforeRequest and onCompleted.
+  //   b) onCompleted fires only after the FULL SSE stream closes (30+ seconds).
   (chrome.webRequest.onBeforeRequest as any).addListener(
     (details: any): void => {
       if (details.tabId < 0) return;
@@ -569,17 +566,17 @@ if (typeof chrome.webRequest !== "undefined" && chrome.webRequest) {
         }
       }
 
-      // Track completion requests so we know when to re-fetch
+      // When a completion POST is detected, schedule an immediate alarm so
+      // bgFetchAndPushUsageToAllTabs() fires even if the SW is suspended.
       if (details.method === "POST" &&
           (url.includes("/completion") || url.includes("/retry_completion"))) {
         const urlParts = url.split("/");
         const orgIdx = urlParts.indexOf("organizations");
-        const convIdx = urlParts.indexOf("chat_conversations");
-        if (orgIdx !== -1 && convIdx !== -1) {
+        if (orgIdx !== -1) {
           const orgId = urlParts[orgIdx + 1];
-          const convId = urlParts[convIdx + 1];
-          const key = `${orgId}:${convId}`;
-          _pendingCompletions.set(key, details.tabId);
+          // Store orgId in the alarm name — no in-memory state needed.
+          const alarmName = `completion-done-${orgId}`;
+          chrome.alarms?.create(alarmName, { delayInMinutes: 0 }).catch(() => {});
         }
       }
     },
@@ -592,42 +589,7 @@ if (typeof chrome.webRequest !== "undefined" && chrome.webRequest) {
     },
   );
 
-  // ── 2. onCompleted: detect when Claude's response has finished ──
-  // When a /chat_conversations/* request completes (the SSE stream ends),
-  // immediately re-fetch /usage and push the updated percentage to all tabs.
-  (chrome.webRequest.onCompleted as any).addListener(
-    (details: any): void => {
-      if (details.tabId < 0) return;
-      const url: string = details.url || "";
-
-      // Check if this is a conversation response completing
-      const urlParts = url.split("/");
-      const orgIdx = urlParts.indexOf("organizations");
-      const convIdx = urlParts.indexOf("chat_conversations");
-
-      if (orgIdx !== -1 && convIdx !== -1) {
-        const orgId = urlParts[orgIdx + 1];
-        const convId = urlParts[convIdx + 1]?.split("?")[0]; // strip query params
-
-        // Check if this was a tracked completion (message response finished)
-        const key = `${orgId}:${convId}`;
-        if (_pendingCompletions.has(key)) {
-          _pendingCompletions.delete(key);
-          // The SSE stream just ended — Claude's response is done.
-          // Re-fetch /usage now for an accurate, up-to-date percentage.
-          bgFetchAndPushUsageToAllTabs(orgId);
-        }
-      }
-    },
-    {
-      urls: [
-        "https://claude.ai/api/organizations/*/chat_conversations/*",
-      ],
-    },
-    ["responseHeaders"],
-  );
-
-  // ── 3. tabs.onUpdated: fetch usage when a claude.ai tab finishes loading ──
+  // ── 2. tabs.onUpdated: fetch usage when a claude.ai tab finishes loading ──
   chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status === "complete" && tab.url?.startsWith("https://claude.ai")) {
       chrome.cookies?.get({ name: "lastActiveOrg", url: "https://claude.ai" })
@@ -641,7 +603,7 @@ if (typeof chrome.webRequest !== "undefined" && chrome.webRequest) {
     }
   });
 
-  // ── 4. onHeadersReceived: extract rate-limit headers (existing) ──
+  // ── 3. onHeadersReceived: extract rate-limit headers (existing) ──
   (chrome.webRequest.onHeadersReceived as any).addListener(
     (details: any): void => {
       if (details.tabId < 0) return;
@@ -877,6 +839,11 @@ async function init(): Promise<void> {
       }
     } else if (alarm.name === "reset_now") {
       broadcastState(getState());
+    } else if (alarm.name.startsWith("completion-done-")) {
+      // Stateless completion trigger: extract orgId from alarm name and
+      // re-fetch /usage. Fires even if the SW was suspended at request time.
+      const orgId = alarm.name.slice("completion-done-".length);
+      if (orgId) bgFetchAndPushUsageToAllTabs(orgId);
     }
   });
 }

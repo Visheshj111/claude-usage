@@ -14,11 +14,10 @@
  *   - STATE_UPDATE messaging
  */
 
-import { initState, getState, onChange, startCountdownTicker, feedDetection, setApiConnected } from "./backend/state-manager";
+import { initState, getState, onChange, startCountdownTicker, feedDetection, setApiConnected, setApiError } from "./backend/state-manager";
 import { runDetection, handleNetworkQuota, startPeriodicScan, estimateUsage } from "./backend/tracker";
 import { interceptFetch, interceptXHR, getTrackedOrgId, setOnOrgIdDetected } from "./backend/network-monitor";
 import type { DetectedUsage, PlanTier } from "./backend/types";
-import { initPromptRefiner } from "./inpage/prompt-refiner";
 import { refineLocal, refineWithAPI, RefinementResult } from './refiner';
 
 // ── Old tracking state ──
@@ -201,7 +200,8 @@ async function fetchUsageFromAPI(): Promise<void> {
       headers: { "Content-Type": "application/json" },
     });
     if (!response.ok) {
-      setApiConnected(false);
+      console.warn(`[CUT] /usage returned ${response.status} — API error`);
+      setApiError(response.status);
       return;
     }
 
@@ -491,7 +491,7 @@ async function init(): Promise<void> {
   orgIdForPlan.then((oid) => { if (oid) fetchPlanInfo(oid); });
 
   // Long-running polling: fetch accurate usage data from Claude's /usage endpoint every 30s
-  const usageApiInterval = setInterval(fetchUsageFromAPI, 30000);
+  const usageApiInterval = setInterval(fetchUsageFromAPI, 10000);
   cleanupFns.push(() => clearInterval(usageApiInterval));
   
   // Fast retry: poll every 3s for the first 30s to catch orgId as soon as it's available
@@ -500,6 +500,11 @@ async function init(): Promise<void> {
   }, 3000);
   const fastRetryTimer = setTimeout(() => {
     clearInterval(fastRetryInterval);
+    // Log if we still have no orgId after the fast-retry window — the
+    // popup will show "not detected" until the user opens a conversation.
+    resolveOrgId().then((id) => {
+      if (!id) console.debug("[CUT] orgId not detected after 30s — waiting for user to open a conversation.");
+    });
   }, 30000);
   cleanupFns.push(() => { clearTimeout(fastRetryTimer); clearInterval(fastRetryInterval); });
 
@@ -530,10 +535,12 @@ async function init(): Promise<void> {
   cleanupFns.push(() => {
     document.getElementById('cut-refine-btn')?.remove();
     document.getElementById('cut-refine-overlay')?.remove();
+    document.getElementById('cut-composer-refine')?.remove();
+    document.getElementById('cut-composer-deep')?.remove();
   });
 
-  // 12. Initialize prompt refiner (opt-in feature)
-  initPromptRefiner();
+  // 12. Initialize composer refiner buttons (opt-in, session-based)
+  initComposerRefiner();
 }
 
 // ── Old: Page / URL Detection ──
@@ -806,50 +813,224 @@ function injectUI(): void {
     </div>
   `;
 
-  // Part A — Button injection
-  const refineBtn = document.createElement('button');
-  refineBtn.id = 'cut-refine-btn';
-  refineBtn.title = 'Refine prompt (save credits)';
-  refineBtn.innerHTML = '✦ Refine';
-  document.body.appendChild(refineBtn);
+  // Part A — Button injection (only when refinerEnabled)
+  chrome.storage.local.get('settings').then(({ settings }) => {
+    const s = (settings || {}) as { refinerEnabled?: boolean; themeMode?: string };
+    if (!s.refinerEnabled) return;
 
-  // Part B — Result overlay
-  const overlay = document.createElement('div');
-  overlay.id = 'cut-refine-overlay';
-  overlay.style.display = 'none';
-  overlay.innerHTML = `
-    <div id="cut-refine-card">
-      <div class="cut-refine-header">
-        <span class="cut-refine-title">Refined prompt</span>
-        <div class="cut-refine-savings" id="cut-refine-savings">Saved 0 tokens</div>
-        <button class="cut-refine-close" id="cut-refine-close">×</button>
-      </div>
-      <div class="cut-refine-body">
-        <div class="cut-refine-col">
-          <div class="cut-refine-col-label">Original <span class="cut-refine-tokens" id="cut-orig-tokens">~0 tokens</span></div>
-          <div class="cut-refine-text" id="cut-orig-text"></div>
-        </div>
-        <div class="cut-refine-divider"></div>
-        <div class="cut-refine-col">
-          <div class="cut-refine-col-label">Refined <span class="cut-refine-tokens cut-refine-tokens-saved" id="cut-refined-tokens">~0 tokens</span></div>
-          <div class="cut-refine-text cut-refine-text-refined" id="cut-refined-text"></div>
-        </div>
-      </div>
-      <div class="cut-refine-footer">
-        <button class="cut-refine-btn-secondary" id="cut-refine-deep">Deep Refine (API)</button>
-        <div class="cut-refine-footer-right">
-          <button class="cut-refine-btn-secondary" id="cut-refine-dismiss">Dismiss</button>
-          <button class="cut-refine-btn-primary" id="cut-refine-accept">Use refined ↵</button>
-        </div>
-      </div>
-      <div class="cut-refine-status" id="cut-refine-status" style="display:none"></div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
+    const refineBtn = document.createElement('button');
+    refineBtn.id = 'cut-refine-btn';
+    refineBtn.title = 'Refine prompt (save credits)';
+    refineBtn.innerHTML = '✦ Refine';
+    document.body.appendChild(refineBtn);
 
-  attachUIEvents();
-  chrome.storage.local.get("settings").then(({ settings }) => {
-    if (settings?.themeMode) detectTheme(settings.themeMode);
+    // Part B — Result overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'cut-refine-overlay';
+    overlay.style.display = 'none';
+    overlay.innerHTML = `
+      <div id="cut-refine-card">
+        <div class="cut-refine-header">
+          <span class="cut-refine-title">Refined prompt</span>
+          <div class="cut-refine-savings" id="cut-refine-savings">Saved 0 tokens</div>
+          <button class="cut-refine-close" id="cut-refine-close">×</button>
+        </div>
+        <div class="cut-refine-body">
+          <div class="cut-refine-col">
+            <div class="cut-refine-col-label">Original <span class="cut-refine-tokens" id="cut-orig-tokens">~0 tokens</span></div>
+            <div class="cut-refine-text" id="cut-orig-text"></div>
+          </div>
+          <div class="cut-refine-divider"></div>
+          <div class="cut-refine-col">
+            <div class="cut-refine-col-label">Refined <span class="cut-refine-tokens cut-refine-tokens-saved" id="cut-refined-tokens">~0 tokens</span></div>
+            <div class="cut-refine-text cut-refine-text-refined" id="cut-refined-text"></div>
+          </div>
+        </div>
+        <div class="cut-refine-footer">
+          <button class="cut-refine-btn-secondary" id="cut-refine-deep">Deep Refine (API)</button>
+          <div class="cut-refine-footer-right">
+            <button class="cut-refine-btn-secondary" id="cut-refine-dismiss">Dismiss</button>
+            <button class="cut-refine-btn-primary" id="cut-refine-accept">Use refined ↵</button>
+          </div>
+        </div>
+        <div class="cut-refine-status" id="cut-refine-status" style="display:none"></div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    attachUIEvents();
+    if (s.themeMode) detectTheme(s.themeMode);
+  });
+}
+
+// ── Composer Refiner Buttons ───────────────────────────────────────────────
+// Injects "✦ Refine" and "⚡ Deep" buttons into the ProseMirror toolbar.
+// Only active when settings.refinerEnabled === true. No API key required.
+function initComposerRefiner(): void {
+  chrome.storage.local.get('settings').then(({ settings }) => {
+    const s = (settings || {}) as { refinerEnabled?: boolean };
+    if (!s.refinerEnabled) return;
+
+    let deepInProgress = false;
+
+    function injectComposerButtons(): void {
+      // Bail out if buttons already present
+      if (document.getElementById('cut-composer-refine')) return;
+
+      const composer = document.querySelector<HTMLElement>('.ProseMirror[contenteditable="true"]');
+      if (!composer) return;
+
+      // Find a stable toolbar ancestor to anchor the buttons.
+      // Claude renders a row of action buttons below the composer;
+      // we insert our buttons into that same container when possible,
+      // falling back to the fieldset or the composer's own parent.
+      const toolbar =
+        (composer.closest('fieldset') as HTMLElement | null) ||
+        composer.parentElement;
+      if (!toolbar) return;
+
+      // Wrapper so the two buttons stay together
+      const wrap = document.createElement('div');
+      wrap.id = 'cut-composer-wrap';
+      wrap.style.cssText = `
+        display: inline-flex;
+        gap: 4px;
+        align-items: center;
+        position: absolute;
+        right: 12px;
+        top: -40px;
+        z-index: 200;
+      `;
+
+      // Ensure the toolbar can host an absolutely-positioned child
+      if (getComputedStyle(toolbar).position === 'static') {
+        toolbar.style.position = 'relative';
+      }
+
+      // ── ✦ Refine button (instant, local rules) ────────────────────────
+      const refBtn = document.createElement('button');
+      refBtn.id = 'cut-composer-refine';
+      refBtn.title = 'Instant local refinement';
+      refBtn.textContent = '✦ Refine';
+      refBtn.style.cssText = `
+        background: #6d28d9;
+        color: #fff;
+        border: none;
+        padding: 5px 11px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        box-shadow: 0 1px 4px rgba(0,0,0,.18);
+        transition: opacity .15s;
+        white-space: nowrap;
+      `;
+
+      refBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const text = getInputText();
+        if (!text || text.length <= 20) return;
+        refBtn.textContent = '⏳ Refining…';
+        refBtn.style.opacity = '0.6';
+        try {
+          const result = refineLocal(text);
+          showRefinementOverlay(result);
+        } finally {
+          refBtn.textContent = '✦ Refine';
+          refBtn.style.opacity = '1';
+        }
+      });
+
+      // ── ⚡ Deep button (AI rewrite via claude.ai session) ──────────────
+      const deepBtn = document.createElement('button');
+      deepBtn.id = 'cut-composer-deep';
+      deepBtn.title = 'AI rewrite via your Claude session (no API key needed)';
+      deepBtn.textContent = '⚡ Deep';
+      deepBtn.style.cssText = `
+        background: #0e7490;
+        color: #fff;
+        border: none;
+        padding: 5px 11px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        box-shadow: 0 1px 4px rgba(0,0,0,.18);
+        transition: opacity .15s;
+        white-space: nowrap;
+      `;
+
+      deepBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (deepInProgress) return;
+
+        const orgId = getTrackedOrgId();
+        if (!orgId) {
+          // Surface error in overlay status if open, else show on the button
+          const statusEl = document.getElementById('cut-refine-status') as HTMLElement | null;
+          if (statusEl && document.getElementById('cut-refine-overlay')?.style.display !== 'none') {
+            statusEl.textContent = 'Org ID not detected yet — try again in a moment.';
+            statusEl.style.display = '';
+          } else {
+            deepBtn.textContent = '⚠ No session';
+            setTimeout(() => { deepBtn.textContent = '⚡ Deep'; }, 2000);
+          }
+          return;
+        }
+
+        deepInProgress = true;
+        deepBtn.textContent = '⏳ Refining…';
+        deepBtn.style.opacity = '0.6';
+        deepBtn.style.cursor = 'wait';
+        refBtn.disabled = true;
+
+        const text = getInputText();
+        try {
+          const result = await refineWithAPI(text, orgId);
+          showRefinementOverlay(result);
+          const statusEl = document.getElementById('cut-refine-status') as HTMLElement | null;
+          if (statusEl) statusEl.style.display = 'none';
+        } catch (err) {
+          console.error('[CUT composer deep refine] failed:', err);
+          const errMsg = err instanceof Error ? err.message : String(err);
+          deepBtn.textContent = '❌ Failed';
+          setTimeout(() => { deepBtn.textContent = '⚡ Deep'; }, 2500);
+          // Fall back to local result and show error in overlay
+          try {
+            const fallback = refineLocal(text);
+            showRefinementOverlay(fallback);
+            const statusEl = document.getElementById('cut-refine-status') as HTMLElement | null;
+            if (statusEl) {
+              statusEl.textContent = `AI refine failed — showing local result instead. (${errMsg})`;
+              statusEl.style.display = '';
+            }
+          } catch { /* if local also fails, leave the button error visible */ }
+        } finally {
+          deepBtn.style.opacity = '1';
+          deepBtn.style.cursor = 'pointer';
+          refBtn.disabled = false;
+          deepInProgress = false;
+          if (deepBtn.textContent === '⏳ Refining…') deepBtn.textContent = '⚡ Deep';
+        }
+      });
+
+      wrap.appendChild(refBtn);
+      wrap.appendChild(deepBtn);
+      toolbar.appendChild(wrap);
+    }
+
+    // Initial inject attempt
+    injectComposerButtons();
+
+    // Re-inject after SPA navigation / composer remounts
+    const observer = new MutationObserver(() => {
+      if (!document.getElementById('cut-composer-refine')) {
+        injectComposerButtons();
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
   });
 }
 
@@ -869,31 +1050,35 @@ function detectTheme(mode?: string): void {
 function attachUIEvents(): void {
   const get = (id: string) => document.getElementById(id);
 
-  get("cut-toggle-min")!.addEventListener("click", toggleMinimize);
-  get("cut-close")!.addEventListener("click", () => {
-    get("cut-widget")!.classList.remove("cut-expanded");
-    get("cut-widget")!.classList.add("cut-collapsed");
-    get("cut-panel")!.style.display = "none";
-    get("cut-badge")!.style.display = "flex";
+  get("cut-toggle-min")?.addEventListener("click", toggleMinimize);
+  get("cut-close")?.addEventListener("click", () => {
+    get("cut-widget")?.classList.remove("cut-expanded");
+    get("cut-widget")?.classList.add("cut-collapsed");
+    const panel = get("cut-panel");
+    if (panel) panel.style.display = "none";
+    const badge = get("cut-badge");
+    if (badge) badge.style.display = "flex";
   });
-  get("cut-badge")!.addEventListener("click", () => {
-    get("cut-widget")!.classList.remove("cut-collapsed");
-    get("cut-widget")!.classList.add("cut-expanded");
-    get("cut-panel")!.style.display = "block";
-    get("cut-badge")!.style.display = "none";
+  get("cut-badge")?.addEventListener("click", () => {
+    get("cut-widget")?.classList.remove("cut-collapsed");
+    get("cut-widget")?.classList.add("cut-expanded");
+    const panel = get("cut-panel");
+    if (panel) panel.style.display = "block";
+    const badge = get("cut-badge");
+    if (badge) badge.style.display = "none";
   });
-  get("cut-open-popup")!.addEventListener("click", () => {
+  get("cut-open-popup")?.addEventListener("click", () => {
     const dashboardUrl = getRuntimeUrl("dist/dashboard/dashboard.html");
     if (dashboardUrl) window.open(dashboardUrl, "_blank");
   });
-  get("cut-open-settings")!.addEventListener("click", () => {
+  get("cut-open-settings")?.addEventListener("click", () => {
     try {
       if (chrome.runtime?.id) chrome.runtime.openOptionsPage();
     } catch {
       // Extension was reloaded while this content script was still alive.
     }
   });
-  get("cut-export")!.addEventListener("click", handleWidgetExport);
+  get("cut-export")?.addEventListener("click", handleWidgetExport);
   get("cut-force-reload")?.addEventListener("click", async () => {
     const btn = get("cut-force-reload");
     if (btn) {
@@ -971,9 +1156,23 @@ function attachUIEvents(): void {
         showRefinementOverlay(result);
         (document.getElementById('cut-refine-status') as HTMLElement).style.display = 'none';
       } catch (err) {
+        console.error("[CUT deep refine] failed:", err);
+        // Show the real error message so the user knows what went wrong
+        const errMsg = err instanceof Error ? err.message : String(err);
         const status = document.getElementById('cut-refine-status') as HTMLElement;
-        status.textContent = 'API refine failed — showing local result.';
+        status.textContent = `AI refine failed: ${errMsg}`;
         status.style.display = '';
+        // Fall back to local refinement so the user still gets a useful result
+        try {
+          const fallback = refineLocal(TRACK.lastRefinement?.original || getInputText());
+          showRefinementOverlay(fallback);
+          // Re-show the error banner on top of the overlay result
+          const statusAfter = document.getElementById('cut-refine-status') as HTMLElement;
+          statusAfter.textContent = `AI refine failed — showing local result instead. (${errMsg})`;
+          statusAfter.style.display = '';
+        } catch {
+          // If even local fails, leave the error message visible
+        }
       } finally {
         deepBtn.textContent = 'Deep Refine (API)';
         deepBtn.disabled = false;
@@ -1196,7 +1395,8 @@ function renderUI(data: Record<string, unknown>): void {
     }
   }
 
-  setText("cut-sent", formatNum(daily.messagesSent));
+  const sentEl = get("cut-sent");
+  if (sentEl) sentEl.textContent = formatNum(daily.messagesSent);
   const recvEl = get("cut-recv");
   if (recvEl) recvEl.textContent = formatNum(daily.messagesReceived);
   const remainEl = get("cut-remain");
@@ -1208,10 +1408,6 @@ function renderUI(data: Record<string, unknown>): void {
   }
 }
 
-function setText(id: string, val: number | null | undefined): void {
-  const el = document.getElementById(id);
-  if (el) el.textContent = String(val ?? "0");
-}
 
 function setNums(id: string, used: number, total: number): void {
   const el = document.getElementById(id);
@@ -1241,49 +1437,6 @@ function formatNum(n: number | null | undefined): string {
   if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
   if (n >= 1000) return (n / 1000).toFixed(1) + "K";
   return String(n);
-}
-
-// ── Chat Export ──
-
-function findScrollContainer(): Element | null {
-  return (
-    document.querySelector('[data-testid="chat-messages"]') ??
-    document.querySelector('[role="log"]') ??
-    document.querySelector("main") ??
-    document.documentElement
-  );
-}
-
-async function scrollToLoadAllMessages(): Promise<void> {
-  const container = findScrollContainer();
-  if (!container) return;
-
-  const msgSel = '[data-message-author-role]';
-  let prevCount = document.querySelectorAll(msgSel).length;
-  let stalls = 0;
-
-  return new Promise<void>((resolve) => {
-    function poll() {
-      container.scrollTop = 0;
-      setTimeout(() => {
-        const count = document.querySelectorAll(msgSel).length;
-        if (count > prevCount) {
-          prevCount = count;
-          stalls = 0;
-          poll();
-        } else {
-          stalls++;
-          if (stalls >= 4) {
-            container.scrollTop = container.scrollHeight;
-            resolve();
-          } else {
-            setTimeout(poll, 600);
-          }
-        }
-      }, 500);
-    }
-    poll();
-  });
 }
 
 async function fetchConversationFromAPI(
@@ -1479,7 +1632,13 @@ window.addEventListener("cut-quota", ((e: CustomEvent) => {
   const data = e.detail;
   if (!data || typeof data !== "object") return;
   const quota = mapEventToQuota(data);
-  if (quota) handleNetworkQuota(quota);
+  if (quota) {
+    handleNetworkQuota(quota);
+    // Immediately refresh from the authoritative /usage endpoint —
+    // the cut-quota event fires mid-stream so this runs within milliseconds
+    // of Claude sending its first quota field in the response.
+    fetchUsageFromAPI();
+  }
 }) as EventListener);
 
 function mapEventToQuota(data: Record<string, unknown>): import("./backend/types").NetworkQuota | null {

@@ -11,34 +11,6 @@
 
 import type { DetectedUsage, BannerMatch } from "./types";
 
-// Claude's actual banner texts (matched against real Claude.ai strings)
-const BANNER_PATTERNS = [
-  // "You've reached your usage limit" / "You've hit your message limit"
-  /you['`\u2019]ve\s+(?:reached|hit)\s+(?:your\s+)?(?:usage|message|rate|daily)\s+limit/i,
-  // "Usage limit reached" / "Message limit reached"
-  /(?:usage|message|rate)\s+limit\s+(?:reached|exceeded|hit)/i,
-  // "Claude is available again at 3:45 PM"
-  /(?:claude\s+is\s+)?available\s+again\s+at\s+([\d:]+(?:\s*[ap]m)?)/i,
-  // "Available again in 3 hours 12 minutes"
-  /available\s+again\s+in\s+(\d+)\s+(hour|minute|second)s?(?:\s+(\d+)\s+(hour|minute|second)s?)?/i,
-  // "Try again later" / "Too many requests"
-  /try\s+again\s+later/i,
-  /too\s+many\s+requests/i,
-  // "X messages remaining" / "X messages left"
-  /(\d+)\s+messages?\s+(?:remaining|left)/i,
-  // "X / Y messages" (e.g. "38 / 45 messages")
-  /(\d+)\s*\/\s*(\d+)\s+messages?/i,
-  // "X messages left in this 5-hour window"
-  /(\d+)\s+messages?\s+(?:left|remaining)\s+in\s+(?:this\s+)?(?:5.hour|five.hour|current)\s+window/i,
-  // "Limit resets at X:XX PM" / "Resets in X hours"
-  /limit\s+resets?\s+(?:at\s+[\d:]+(?:\s*[ap]m)?|in\s+\d+)/i,
-  // Hard-limit / cooldown patterns
-  /cooldown/i,
-  /rate.limited/i,
-  /you.*have.*been.*rate.*limited/i,
-  /cooldown.*until/i,
-] as const;
-
 // Time patterns — updated to handle "3:45 PM", "in 3 hours 12 minutes", ISO timestamps
 const TIME_PATTERNS = [
   // "available again at 3:45 PM" or "at 14:00"
@@ -51,268 +23,42 @@ const TIME_PATTERNS = [
   /([\d]{4}-[\d]{2}-[\d]{2}[T ][\d]{2}:[\d]{2}(?::[\d]{2})?(?:Z|[+-][\d:]+)?)/,
 ] as const;
 
-// Progress bar selectors — added Claude-specific class/testid patterns
-const PROGRESS_SELECTORS = [
-  '[role="progressbar"]',
-  "progress",
-  "meter",
-  // Generic testids
-  '[data-testid="usage-progress"]',
-  '[data-testid*="usage"]',
-  '[data-testid*="limit"]',
-  // Claude-specific class fragments (class names may change but fragments are stable)
-  '[class*="UsageMeter"]',
-  '[class*="usage-meter"]',
-  '[class*="MessageLimit"]',
-  '[class*="RateLimit"]',
-  '[class*="usageBar"]',
-  '[class*="usage-bar"]',
-  // Look near the model selector (Claude shows usage chip in the toolbar)
-  'fieldset [role="progressbar"]',
-  'header [role="progressbar"]',
-  'nav [role="progressbar"]',
-  // Aria patterns
-  '[aria-label*="usage"]',
-  '[aria-label*="messages"]',
-  '[aria-label*="remaining"]',
-];
-
-// Banner/alert selectors — Claude uses these to show limit messages
-const BANNER_SELECTORS = [
-  '[class*="banner"]',
-  '[class*="toast"]',
-  '[class*="notification"]',
-  '[class*="alert"]',
-  '[class*="warning"]',
-  '[role="alert"]',
-  '[role="status"]',
-  '[data-testid*="limit"]',
-  '[data-testid*="usage"]',
-  '[data-testid*="banner"]',
-  '[data-testid*="warning"]',
-  // Claude-specific
-  '[class*="LimitBanner"]',
-  '[class*="UsageLimit"]',
-  '[class*="MessageLimit"]',
-  '[class*="RateLimitBanner"]',
-];
 
 // ── Primary entry point ──
 
 export function detectUsage(): DetectedUsage | null {
-  let best: DetectedUsage | null = null;
-
+  // All three scan functions return null unconditionally (DOM scraping disabled).
+  // Keeping the call structure intact so re-enabling a scanner is a one-line change.
   const fromProgress = scanProgressBars();
-  if (fromProgress && (!best || fromProgress.confidence > best.confidence)) {
-    best = fromProgress;
-  }
-
   const fromBanners = scanBanners();
-  if (fromBanners && (!best || fromBanners.confidence > best.confidence)) {
-    best = fromBanners;
-  }
-
   const fromText = scanPageText();
-  if (fromText && (!best || fromText.confidence > best.confidence)) {
-    best = fromText;
-  }
-
-  return best;
+  // Pick the highest-confidence result (currently all null)
+  const candidates = [fromProgress, fromBanners, fromText].filter((c): c is DetectedUsage => c !== null);
+  if (candidates.length === 0) return null;
+  return candidates.reduce((best, c) => c.confidence > best.confidence ? c : best);
 }
 
 // ── Progress bar scanning ──
 
 function scanProgressBars(): DetectedUsage | null {
-  for (const sel of PROGRESS_SELECTORS) {
-    const elements = document.querySelectorAll(sel);
-    for (const el of elements) {
-      const result = parseProgressElement(el);
-      if (result) return result;
-    }
-  }
+  // DOM scraping disabled — /usage API and cut-quota events are authoritative.
+  // Stale DOM values (e.g. cached progress bars) caused confidence-score races
+  // that overwrote fresh API data with outdated DOM readings.
   return null;
 }
 
-function parseProgressElement(el: Element): DetectedUsage | null {
-  const result: DetectedUsage = { confidence: 0, source: "official-ui" };
-
-  // aria-valuenow / aria-valuemax (most reliable)
-  const now = el.getAttribute("aria-valuenow");
-  const max = el.getAttribute("aria-valuemax");
-
-  if (now !== null && max !== null) {
-    const n = parseFloat(now);
-    const m = parseFloat(max);
-    if (!isNaN(n) && !isNaN(m) && m > 0) {
-      result.usagePercent = Math.round((n / m) * 100);
-      result.remainingMessages = Math.round(m - n);
-      result.sessionLimit = Math.round(m);
-      result.sessionMessagesUsed = Math.round(n);
-      result.confidence = 0.9;
-      if (n >= m) result.isRateLimited = true;
-      return result;
-    }
-  }
-
-  // <progress> native element
-  if (el instanceof HTMLProgressElement) {
-    const v = el.value;
-    const m = el.max;
-    if (m > 0) {
-      result.usagePercent = Math.round((v / m) * 100);
-      result.remainingMessages = Math.round(m - v);
-      result.sessionLimit = Math.round(m);
-      result.sessionMessagesUsed = Math.round(v);
-      result.confidence = 0.9;
-      if (v >= m) result.isRateLimited = true;
-      return result;
-    }
-  }
-
-  // <meter> element
-  if (el instanceof HTMLMeterElement) {
-    const v = el.value;
-    const m = el.max;
-    if (m > 0) {
-      result.usagePercent = Math.round((v / m) * 100);
-      result.remainingMessages = Math.round(m - v);
-      result.sessionLimit = Math.round(m);
-      result.confidence = 0.85;
-      return result;
-    }
-  }
-
-  // Inline style width: X%
-  const styleWidth = el.getAttribute("style");
-  if (styleWidth) {
-    const pctMatch = styleWidth.match(/width\s*:\s*(\d+(?:\.\d+)?)\s*%/);
-    if (pctMatch) {
-      result.usagePercent = Math.round(parseFloat(pctMatch[1]));
-      result.confidence = 0.6;
-      return result;
-    }
-  }
-
-  // data-pct / data-percent
-  const dataPct = el.getAttribute("data-pct") || el.getAttribute("data-percent");
-  if (dataPct) {
-    const p = parseFloat(dataPct);
-    if (!isNaN(p)) {
-      result.usagePercent = Math.round(p);
-      result.confidence = 0.6;
-      return result;
-    }
-  }
-
-  return null;
-}
 
 // ── Banner scanning ──
 
 function scanBanners(): DetectedUsage | null {
-  for (const sel of BANNER_SELECTORS) {
-    const elements = document.querySelectorAll(sel);
-    for (const el of elements) {
-      const text = el.textContent?.trim();
-      if (!text || text.length < 5) continue;
-
-      const match = parseBannerText(text);
-      if (!match) continue;
-
-      const result: DetectedUsage = { confidence: 0.75, source: "banner" };
-
-      if (match.type === "rate-limited") {
-        result.isRateLimited = true;
-        if (match.value !== null) result.resetTimestamp = match.value;
-        if (match.limitType !== undefined) result.limitType = match.limitType;
-        if (match.hardLimitResetAt !== undefined) result.hardLimitResetAt = match.hardLimitResetAt;
-        return result;
-      } else if (match.type === "reset-time" && match.value !== null) {
-        result.resetTimestamp = match.value;
-        return result;
-      } else if (match.type === "usage-percent" && match.value !== null) {
-        result.usagePercent = match.value;
-        return result;
-      } else if (match.type === "remaining" && match.value !== null) {
-        result.remainingMessages = match.value;
-        result.confidence = 0.7;
-        return result;
-      }
-    }
-  }
+  // DOM scraping disabled — see scanProgressBars() comment.
   return null;
 }
 
 // ── Full page text scan ──
 
 function scanPageText(): DetectedUsage | null {
-  const text = document.body?.textContent ?? "";
-  if (!text) return null;
-
-  for (const pattern of BANNER_PATTERNS) {
-    const m = text.match(pattern);
-    if (!m) continue;
-
-    const result: DetectedUsage = { confidence: 0.5, source: "banner" };
-    const fullMatch = m[0].toLowerCase();
-
-    // Hard limit / cooldown detection
-    const isCooldown = text.toLowerCase().includes("cooldown") ||
-      text.toLowerCase().includes("rate limited") ||
-      (text.toLowerCase().includes("try again") && text.toLowerCase().includes("much later"));
-
-    // Rate limited
-    if (
-      fullMatch.includes("limit reached") ||
-      fullMatch.includes("limit exceeded") ||
-      fullMatch.includes("limit hit") ||
-      fullMatch.includes("try again later") ||
-      fullMatch.includes("too many requests") ||
-      fullMatch.includes("you've reached")
-    ) {
-      result.isRateLimited = true;
-      if (isCooldown) {
-        result.limitType = "hard";
-      } else {
-        result.limitType = "soft";
-      }
-    }
-
-    // "X messages remaining" or "X messages left"
-    if ((fullMatch.includes("remaining") || fullMatch.includes("left")) && m[1]) {
-      const rem = parseInt(m[1], 10);
-      if (!isNaN(rem)) {
-        result.remainingMessages = rem;
-        result.confidence = 0.65;
-      }
-    }
-
-    // "X / Y messages"
-    if (fullMatch.includes("/") && m[1] && m[2]) {
-      const used = parseInt(m[1], 10);
-      const total = parseInt(m[2], 10);
-      if (!isNaN(used) && !isNaN(total) && total > 0) {
-        result.usagePercent = Math.round((used / total) * 100);
-        result.remainingMessages = total - used;
-        result.sessionLimit = total;
-        result.sessionMessagesUsed = used;
-        result.confidence = 0.7;
-      }
-    }
-
-    // Try to extract a reset time from this block
-    const timeTs = extractTimeFromText(text);
-    if (timeTs) {
-      result.resetTimestamp = timeTs;
-      result.confidence = Math.max(result.confidence, 0.65);
-      if (result.limitType === "hard") {
-        result.hardLimitResetAt = timeTs;
-      }
-    }
-
-    return result;
-  }
-
+  // DOM scraping disabled — see scanProgressBars() comment.
   return null;
 }
 

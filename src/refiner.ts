@@ -209,14 +209,22 @@ export async function refineWithAPI(
     {
       method: "POST",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+      },
       body: JSON.stringify({
-        prompt: text,
-        model: "claude-haiku-4-5",
-        max_tokens: 1024,
-        system: REFINER_SYSTEM_PROMPT,
         stream: true,
-        messages: [{ role: "user", content: text }],
+        messages: [
+          {
+            role: "user",
+            content: `${REFINER_SYSTEM_PROMPT}\n\nPrompt to optimize:\n${text}`,
+          },
+        ],
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        source: "chat_window",
+        attachments: [],
+        files: [],
       }),
     }
   );
@@ -229,6 +237,13 @@ export async function refineWithAPI(
 
   // Step 3: parse SSE stream (same pattern as watcher.js)
   const refined = await readSSEResponse(completionResp);
+
+  // Step 4: fire-and-forget DELETE to clean up the ephemeral conversation
+  // so it doesn't permanently appear in the user's claude.ai history.
+  void fetch(`${baseUrl}/chat_conversations/${convId}`, {
+    method: "DELETE",
+    credentials: "include",
+  }).catch(() => { /* swallow — cleanup failure is non-fatal */ });
 
   if (!refined || refined.trim().length === 0) {
     throw new Error("[refiner] API returned empty response");

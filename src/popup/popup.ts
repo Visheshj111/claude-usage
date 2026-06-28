@@ -1,4 +1,4 @@
-export {};
+﻿export {};
 
 const _themeMedia = window.matchMedia('(prefers-color-scheme: dark)');
 let _themeMode = 'auto';
@@ -10,34 +10,34 @@ document.addEventListener('DOMContentLoaded', () => {
     if (_themeMode === 'auto') applyPopupTheme('auto');
   });
 
-  document.getElementById('privacy-accept-btn').addEventListener('click', acceptPrivacy);
+  document.getElementById('privacy-accept-btn')?.addEventListener('click', acceptPrivacy);
 
-  document.getElementById('dashboard-btn').addEventListener('click', () => {
+  document.getElementById('dashboard-btn')?.addEventListener('click', () => {
     chrome.tabs.create({ url: chrome.runtime.getURL('dist/dashboard/dashboard.html') });
   });
 
-  document.getElementById('settings-btn').addEventListener('click', () => {
+  document.getElementById('settings-btn')?.addEventListener('click', () => {
     chrome.runtime.openOptionsPage();
   });
 
-  document.getElementById('reset-btn').addEventListener('click', async () => {
+  document.getElementById('reset-btn')?.addEventListener('click', async () => {
     if (confirm('Clear all tracked usage data?')) {
       await chrome.runtime.sendMessage({ type: 'RESET_USAGE' });
       render();
     }
   });
 
-  document.getElementById('export-btn').addEventListener('click', handleExport);
+  document.getElementById('export-btn')?.addEventListener('click', handleExport);
 
-  document.getElementById('show-privacy-link').addEventListener('click', (e) => {
+  document.getElementById('show-privacy-link')?.addEventListener('click', (e) => {
     e.preventDefault();
     showPrivacyScreen();
   });
 });
 
-let _privacyRenderTimer = null;
+let _privacyRenderTimer: ReturnType<typeof setInterval> | null = null;
 
-function applyPopupTheme(themeMode) {
+function applyPopupTheme(themeMode: string): void {
   _themeMode = themeMode || 'auto';
   localStorage.setItem('themeMode', _themeMode);
   const isDark = _themeMode === 'dark' ||
@@ -45,7 +45,7 @@ function applyPopupTheme(themeMode) {
   document.documentElement.classList.toggle('dark', isDark);
 }
 
-async function initPrivacy() {
+async function initPrivacy(): Promise<void> {
   const { privacyAccepted } = await chrome.storage.local.get('privacyAccepted');
   if (privacyAccepted) {
     showMainContent();
@@ -54,38 +54,42 @@ async function initPrivacy() {
   }
 }
 
-function showPrivacyScreen() {
-  document.getElementById('privacy-screen').style.display = '';
-  document.getElementById('main-content').style.display = 'none';
+function showPrivacyScreen(): void {
+  const privacyScreen = document.getElementById('privacy-screen');
+  const mainContent = document.getElementById('main-content');
+  if (privacyScreen) privacyScreen.style.display = '';
+  if (mainContent) mainContent.style.display = 'none';
   if (_privacyRenderTimer) {
     clearInterval(_privacyRenderTimer);
     _privacyRenderTimer = null;
   }
 }
 
-async function acceptPrivacy() {
+async function acceptPrivacy(): Promise<void> {
   await chrome.storage.local.set({ privacyAccepted: true });
   showMainContent();
 }
 
-function showMainContent() {
-  document.getElementById('privacy-screen').style.display = 'none';
-  document.getElementById('main-content').style.display = '';
+function showMainContent(): void {
+  const privacyScreen = document.getElementById('privacy-screen');
+  const mainContent = document.getElementById('main-content');
+  if (privacyScreen) privacyScreen.style.display = 'none';
+  if (mainContent) mainContent.style.display = '';
   render();
   if (!_privacyRenderTimer) {
     _privacyRenderTimer = setInterval(render, 1000);
   }
 }
 
-async function render() {
+async function render(): Promise<void> {
   const result = await chrome.runtime.sendMessage({ type: 'GET_ALL_DATA' });
   if (!result) return;
 
   const {
     sessionPct, sessionMessagesUsed, sessionLimit, sessionWindowMs,
     remaining, session, settings, conversations,
-    source, isRateLimited, resetIn, resetTimestamp, apiConnected,
-    limitType, hardLimitResetAt, orgId, hasAccurateData,
+    source, resetIn, resetTimestamp, apiConnected, apiErrorStatus,
+    limitType, hardLimitResetAt, orgId,
     planTier, weeklyUsage, weeklySonnetUsage, weeklyOpusUsage,
     confidence
   } = result;
@@ -95,7 +99,8 @@ async function render() {
   const state = result;
 
   const windowHours = sessionWindowMs ? Math.round(sessionWindowMs / 3600000) : 5;
-  document.getElementById('window-badge').textContent = windowHours + 'h';
+  const windowBadge = document.getElementById('window-badge');
+  if (windowBadge) windowBadge.textContent = windowHours + 'h';
 
   // Plan badge
   const planEl = document.getElementById('plan-badge');
@@ -111,19 +116,31 @@ async function render() {
   renderWeekly(weeklySonnetUsage, 'weekly-sonnet-bar', 'weekly-sonnet-nums', 'weekly-sonnet-row');
   renderWeekly(weeklyOpusUsage, 'weekly-opus-bar', 'weekly-opus-nums', 'weekly-opus-row');
   const weeklyGroup = document.getElementById('weekly-group');
-  if (weeklyGroup) {
-    weeklyGroup.style.display = weeklyUsage ? '' : 'none';
-  }
+  if (weeklyGroup) weeklyGroup.style.display = weeklyUsage ? '' : 'none';
 
   const sourceEl = document.getElementById('source-badge');
-  sourceEl.textContent = source || 'unknown';
-  sourceEl.className = 'source-badge' + (source ? ' ' + source : '');
+  if (sourceEl) {
+    sourceEl.textContent = source || 'unknown';
+    sourceEl.className = 'source-badge' + (source ? ' ' + source : '');
+  }
 
   const apiDot = document.getElementById('api-dot');
-  apiDot.className = 'api-dot' + (apiConnected ? ' connected' : '');
-  apiDot.title = apiConnected ? 'API connected' : 'API disconnected';
+  if (apiDot) {
+    apiDot.className = 'api-dot' + (apiConnected ? ' connected' : '');
+    if (apiConnected) {
+      apiDot.title = 'API connected';
+    } else if (apiErrorStatus) {
+      const hint: string =
+        apiErrorStatus === 401 ? ' (session expired — reload claude.ai)' :
+        apiErrorStatus === 429 ? ' (rate limited by server)' :
+        apiErrorStatus >= 500 ? ' (claude.ai may be down)' : '';
+      apiDot.title = `API error ${apiErrorStatus}${hint}`;
+    } else {
+      apiDot.title = 'API disconnected';
+    }
+  }
 
-  // Show limit type info
+  // Limit type
   const limitTypeEl = document.getElementById('limit-type');
   if (limitTypeEl) {
     if (limitType === 'hard') {
@@ -138,7 +155,7 @@ async function render() {
     }
   }
 
-  // Show cooldown info
+  // Cooldown
   const cooldownEl = document.getElementById('cooldown-info');
   const cooldownTimerEl = document.getElementById('cooldown-timer');
   if (cooldownEl && cooldownTimerEl) {
@@ -150,7 +167,7 @@ async function render() {
     }
   }
 
-  // Peak hours banner
+  // Peak hours
   const peakRow = document.getElementById('peak-row');
   const peakDot = document.getElementById('peak-dot');
   const peakMessage = document.getElementById('peak-message');
@@ -173,7 +190,7 @@ async function render() {
     }
   }
 
-  // Show org info
+  // Org info
   const orgEl = document.getElementById('org-id');
   if (orgEl) {
     if (orgId) {
@@ -181,30 +198,36 @@ async function render() {
       orgEl.title = orgId;
       orgEl.style.display = '';
     } else {
-      orgEl.style.display = 'none';
+      orgEl.textContent = 'Org: not detected';
+      orgEl.title = 'Open a claude.ai conversation to enable tracking.';
+      orgEl.style.display = '';
     }
   }
 
-  const msgsUsed = sessionMessagesUsed || 0;
-  const msgsTotal = sessionLimit || 45;
+  const msgsUsed: number = sessionMessagesUsed || 0;
+  const msgsTotal: number = sessionLimit || 45;
   const msgsRemaining = Math.max(0, msgsTotal - msgsUsed);
-  const pct = sessionPct != null ? sessionPct : Math.min(100, Math.round((msgsUsed / msgsTotal) * 100));
-  const tokensUsed = (remaining?.tokens != null) ? (remaining.tokensTotal || 90000) - remaining.tokens : 0;
-  const tokensTotal = remaining?.tokensTotal || 90000;
+  const pct: number = sessionPct != null ? sessionPct : Math.min(100, Math.round((msgsUsed / msgsTotal) * 100));
+  const tokensUsed: number = (remaining?.tokens != null) ? (remaining.tokensTotal || 90000) - remaining.tokens : 0;
+  const tokensTotal: number = remaining?.tokensTotal || 90000;
   const tokenPct = Math.min(100, Math.round((tokensUsed / tokensTotal) * 100));
 
-  document.getElementById('metric-pct').textContent = pct + '%';
-  document.getElementById('metric-used').textContent = formatNum(msgsUsed);
-  document.getElementById('metric-remain').textContent = formatNum(msgsRemaining);
+  const metricPct = document.getElementById('metric-pct');
+  const metricUsed = document.getElementById('metric-used');
+  if (metricPct) metricPct.textContent = pct + '%';
+  if (metricUsed) metricUsed.textContent = formatNum(msgsUsed);
   const remainEl = document.getElementById('metric-remain');
-  remainEl.className = 'metric-val metric-remain';
-  if (msgsRemaining < 5) remainEl.classList.add('danger');
-  else if (msgsRemaining < 10) remainEl.classList.add('warn');
+  if (remainEl) {
+    remainEl.textContent = formatNum(msgsRemaining);
+    remainEl.className = 'metric-val metric-remain';
+    if (msgsRemaining < 5) remainEl.classList.add('danger');
+    else if (msgsRemaining < 10) remainEl.classList.add('warn');
+  }
 
   // Confidence bar
   const confidenceBar = document.getElementById('confidence-bar');
-  const confidencePct = document.getElementById('confidence-pct');
-  if (confidenceBar && confidencePct) {
+  const confidencePctEl = document.getElementById('confidence-pct');
+  if (confidenceBar && confidencePctEl) {
     const confPct = confidence != null ? Math.round(confidence * 100) : 0;
     confidenceBar.style.width = confPct + '%';
     let cls = 'confidence-fill';
@@ -212,47 +235,65 @@ async function render() {
     else if (confPct >= 60) cls += ' warn';
     else cls += ' danger';
     confidenceBar.className = cls;
-    confidencePct.textContent = confPct + '%';
+    confidencePctEl.textContent = confPct + '%';
   }
 
   setGauge(pct);
-
   setBar('session-bar', pct);
   setBar('token-bar', tokenPct);
-  document.getElementById('session-nums').textContent = `${formatNum(msgsUsed)} / ${formatNum(msgsTotal)}`;
-  document.getElementById('token-nums').textContent = `${formatNum(tokensUsed)} / ${formatNum(tokensTotal)}`;
+
+  const sessionNums = document.getElementById('session-nums');
+  const tokenNums = document.getElementById('token-nums');
+  if (sessionNums) sessionNums.textContent = `${formatNum(msgsUsed)} / ${formatNum(msgsTotal)}`;
+  if (tokenNums) tokenNums.textContent = `${formatNum(tokensUsed)} / ${formatNum(tokensTotal)}`;
 
   const dot = document.getElementById('session-dot');
-  if (session?.startTime) {
-    dot.className = 'session-dot';
-    document.getElementById('session-time').textContent = formatDuration(Date.now() - session.startTime);
-    document.getElementById('session-convs').textContent = `${session.conversations || 0} convs`;
-    document.getElementById('session-usage-line').textContent =
+  const sessionData = session as { startTime?: number; conversations?: number } | null;
+  if (sessionData?.startTime) {
+    if (dot) dot.className = 'session-dot';
+    const sessionTime = document.getElementById('session-time');
+    const sessionConvs = document.getElementById('session-convs');
+    const sessionUsageLine = document.getElementById('session-usage-line');
+    if (sessionTime) sessionTime.textContent = formatDuration(Date.now() - sessionData.startTime);
+    if (sessionConvs) sessionConvs.textContent = `${sessionData.conversations || 0} convs`;
+    if (sessionUsageLine) sessionUsageLine.textContent =
       `${formatNum(msgsUsed)} of ${formatNum(msgsTotal)} messages \u00B7 ${pct}% used`;
   } else {
-    dot.className = 'session-dot inactive';
-    document.getElementById('session-time').textContent = '--:--:--';
-    document.getElementById('session-convs').textContent = '0 convs';
-    document.getElementById('session-usage-line').textContent = '';
+    if (dot) dot.className = 'session-dot inactive';
+    const sessionTime = document.getElementById('session-time');
+    const sessionConvs = document.getElementById('session-convs');
+    const sessionUsageLine = document.getElementById('session-usage-line');
+    if (sessionTime) sessionTime.textContent = '--:--:--';
+    if (sessionConvs) sessionConvs.textContent = '0 convs';
+    if (sessionUsageLine) sessionUsageLine.textContent = '';
   }
 
   const resetEl = document.getElementById('reset-timer');
-  if (resetTimestamp && resetTimestamp > Date.now()) {
-    resetEl.textContent = formatDuration(resetTimestamp - Date.now());
-  } else if (resetIn != null && resetIn > 0) {
-    resetEl.textContent = formatDuration(resetIn);
-  } else {
-    resetEl.textContent = '--:--:--';
+  if (resetEl) {
+    if (resetTimestamp && resetTimestamp > Date.now()) {
+      resetEl.textContent = formatDuration(resetTimestamp - Date.now());
+    } else if (resetIn != null && resetIn > 0) {
+      resetEl.textContent = formatDuration(resetIn);
+    } else {
+      resetEl.textContent = '--:--:--';
+    }
   }
 
   renderConversations(conversations);
 }
 
-function renderConversations(convs) {
+interface ConvEntry {
+  startedAt: string;
+  messagesSent?: number;
+  messagesReceived?: number;
+  title?: string;
+}
+
+function renderConversations(convs: Record<string, ConvEntry> | null | undefined): void {
   const list = document.getElementById('conv-list');
   const countEl = document.getElementById('conv-count');
   if (!convs || Object.keys(convs).length === 0) {
-    list.innerHTML = '<li class="empty-li">None yet.</li>';
+    if (list) list.innerHTML = '<li class="empty-li">None yet.</li>';
     if (countEl) countEl.textContent = '';
     return;
   }
@@ -261,24 +302,21 @@ function renderConversations(convs) {
   if (countEl) countEl.textContent = String(entries.length);
 
   const sorted = entries
-    .sort(([, a], [, b]) => new Date(b.startedAt) - new Date(a.startedAt))
+    .sort(([, a], [, b]) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
     .slice(0, 5);
 
-  list.innerHTML = sorted.map(([, conv]) => {
-    const total = (conv.messagesSent || 0) + (conv.messagesReceived || 0);
-    return `<li>
-      <span class="conv-title">${esc(conv.title || 'Untitled')}</span>
-      <span class="conv-meta">${total}</span>
-    </li>`;
-  }).join('');
+  if (list) {
+    list.innerHTML = sorted.map(([, conv]) => {
+      const total = (conv.messagesSent || 0) + (conv.messagesReceived || 0);
+      return `<li>
+        <span class="conv-title">${esc(conv.title || 'Untitled')}</span>
+        <span class="conv-meta">${total}</span>
+      </li>`;
+    }).join('');
+  }
 }
 
-function setText(id, val) {
-  const el = document.getElementById(id);
-  if (el) el.textContent = String(val ?? '0');
-}
-
-function setBar(id, pct) {
+function setBar(id: string, pct: number): void {
   const el = document.getElementById(id);
   if (!el) return;
   el.style.width = `${pct}%`;
@@ -288,7 +326,7 @@ function setBar(id, pct) {
   else el.classList.add('safe');
 }
 
-function setGauge(pct) {
+function setGauge(pct: number): void {
   const ring = document.getElementById('gauge-ring');
   const text = document.getElementById('gauge-text');
   if (!ring || !text) return;
@@ -300,7 +338,7 @@ function setGauge(pct) {
   text.textContent = pct + '%';
 }
 
-function formatDuration(ms) {
+function formatDuration(ms: number): string {
   if (ms <= 0 || !Number.isFinite(ms)) return '00:00:00';
   const s = Math.floor(ms / 1000);
   const h = Math.floor(s / 3600);
@@ -308,14 +346,19 @@ function formatDuration(ms) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 }
 
-function formatNum(n) {
+function formatNum(n: number | null | undefined): string {
   if (!n && n !== 0) return '0';
   if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
   if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
   return String(n);
 }
 
-function renderWeekly(weekly, barId, numsId, rowId?) {
+function renderWeekly(
+  weekly: { usagePercent?: number | null; messagesUsed?: number | null; maxMessages?: number | null } | null | undefined,
+  barId: string,
+  numsId: string,
+  rowId?: string
+): void {
   const bar = document.getElementById(barId);
   const nums = document.getElementById(numsId);
   const row = rowId ? document.getElementById(rowId) : null;
@@ -339,7 +382,7 @@ function renderWeekly(weekly, barId, numsId, rowId?) {
   if (row) row.style.display = '';
 }
 
-async function handleExport() {
+async function handleExport(): Promise<void> {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   const tab = tabs[0];
   if (!tab?.id || !tab.url?.includes('claude.ai')) {
@@ -359,7 +402,7 @@ async function handleExport() {
   }
 }
 
-function downloadMarkdown(content, title) {
+function downloadMarkdown(content: string, title: string): void {
   const blob = new Blob([content], { type: 'text/markdown' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -371,7 +414,7 @@ function downloadMarkdown(content, title) {
   URL.revokeObjectURL(url);
 }
 
-function esc(str) {
+function esc(str: string): string {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;

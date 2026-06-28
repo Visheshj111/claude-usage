@@ -47,6 +47,8 @@ export interface UsageState {
   confidence: number;
   /** Whether the direct API (/usage) endpoint is reachable */
   apiConnected: boolean;
+  /** If the last /usage call failed, the HTTP status code (e.g. 401, 429, 503) */
+  apiErrorStatus: number | null;
   /** Limit type: "soft" (5h window) or "hard" (cooldown) */
   limitType: LimitType;
   /** If hard-limited, when the hard cooldown expires */
@@ -133,6 +135,7 @@ export function emptyUsage(source: DataSource = "unknown"): UsageState {
     source,
     confidence: 0,
     apiConnected: false,
+    apiErrorStatus: null,
     limitType: "unknown",
     hardLimitResetAt: null,
     orgId: null,
