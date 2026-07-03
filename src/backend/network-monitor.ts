@@ -27,11 +27,25 @@ const QUOTA_HEADERS = [
 // Track the org ID from intercepted API requests
 let _cutOrgId: string | null = null;
 let _onOrgIdDetected: ((orgId: string) => void) | null = null;
+function isUsableOrgId(value: string | null | undefined): value is string {
+  if (!value) return false;
+  if (["discoverable", "undefined", "null"].includes(value)) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+function rememberOrgId(orgId: string): void {
+  if (!isUsableOrgId(orgId)) return;
+  if (orgId !== _cutOrgId) {
+    _cutOrgId = orgId;
+    _onOrgIdDetected?.(orgId);
+  }
+  chrome.storage?.local?.set({ lastKnownOrgId: orgId }).catch(() => {});
+}
 
 export function getTrackedOrgId(): string | null {
   if (!_cutOrgId) {
     const match = document.cookie.match(/\blastActiveOrg=([^;]+)/);
-    if (match) {
+    if (isUsableOrgId(match?.[1])) {
       _cutOrgId = match[1];
     }
   }
@@ -44,13 +58,18 @@ export function setOnOrgIdDetected(cb: (orgId: string) => void): void {
   if (_cutOrgId) cb(_cutOrgId);
 }
 
+/**
+ * Allow entry-content.ts to push an orgId that was directly observed in a
+ * page-world event (e.g. cut-completion-done) without going through the
+ * async resolution waterfall.  Idempotent — safe to call on every event.
+ */
+export function notifyOrgIdFromWatcher(orgId: string): void {
+  rememberOrgId(orgId);
+}
+
 // Listen for orgId extracted by watcher.js in the main world
 window.addEventListener("cut-org-id", ((e: CustomEvent<string>) => {
-  const newOrgId = e.detail;
-  if (newOrgId && newOrgId !== _cutOrgId) {
-    _cutOrgId = newOrgId;
-    _onOrgIdDetected?.(newOrgId);
-  }
+  rememberOrgId(e.detail);
 }) as EventListener);
 
 // Claude's actual API endpoints (updated from generic guesses)

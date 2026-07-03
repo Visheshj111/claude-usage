@@ -27,6 +27,7 @@ interface Settings {
   resetPeriod: string;
   tokenEstimationMethod: string;
   showNotifications: boolean;
+  showInPageWidget?: boolean;
   themeMode?: string;
   limits: {
     dailyMessages: number;
@@ -79,6 +80,7 @@ const DEFAULT_SETTINGS: Settings = {
   resetPeriod: "5h",
   tokenEstimationMethod: "chars/4",
   showNotifications: true,
+  showInPageWidget: true,
   limits: {
     dailyMessages: 45,
     dailyTokens: 90000,
@@ -398,12 +400,19 @@ async function getAllData(): Promise<Record<string, unknown>> {
   const windowStartTs = backendState.resetTimestamp
     ? backendState.resetTimestamp - (limits.sessionWindowMs || 5 * 60 * 60 * 1000)
     : sessionStorageData?.startTime ?? undefined;
-  const nextReset = computeNextReset(currentSettings.resetPeriod, windowStartTs);
-  const resetIn = nextReset - Date.now();
+  const nextReset = backendState.resetTimestamp
+    ? backendState.resetTimestamp
+    : currentSettings.resetPeriod === "5h"
+    ? 0
+    : computeNextReset(currentSettings.resetPeriod, windowStartTs);
+  const resetIn = nextReset > 0 ? nextReset - Date.now() : 0;
 
-  // Prefer backend state (from /usage API), fall back to old tracking + settings
+  // Prefer backend state (from /usage API), fall back to old tracking + settings.
   const sessionLimit = backendState.sessionLimit ?? limits.dailyMessages;
-  const sessionMessagesUsed = backendState.sessionMessagesUsed ?? msgsUsed;
+  const sessionMessagesUsedFromRemaining = backendState.remainingMessages !== null
+    ? Math.max(0, sessionLimit - backendState.remainingMessages)
+    : null;
+  const sessionMessagesUsed = backendState.sessionMessagesUsed ?? sessionMessagesUsedFromRemaining ?? msgsUsed;
   const remainingMessages = backendState.remainingMessages ?? Math.max(0, sessionLimit - sessionMessagesUsed);
   const sessionPct = backendState.usagePercent ?? (sessionLimit > 0
     ? Math.min(100, Math.round((sessionMessagesUsed / sessionLimit) * 100))
@@ -507,8 +516,31 @@ const pendingTabQuota = new Map<number, NetworkQuota>();
 // Declared here (outside the if-block) so the message handler and alarm
 // handler can reference them even if webRequest is unavailable.
 let _bgOrgId: string | null = null;
+const LAST_KNOWN_ORG_ID_KEY = "lastKnownOrgId";
+
+function isUsableOrgId(value: string | null | undefined): value is string {
+  if (!value) return false;
+  if (["discoverable", "undefined", "null"].includes(value)) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+function rememberBgOrgId(orgId: string): void {
+  if (!isUsableOrgId(orgId)) return;
+  _bgOrgId = orgId;
+  chrome.storage?.local?.set({ [LAST_KNOWN_ORG_ID_KEY]: orgId }).catch(() => {});
+}
+
+async function getStoredOrgId(): Promise<string | null> {
+  try {
+    const result = await chrome.storage.local.get(LAST_KNOWN_ORG_ID_KEY) as { lastKnownOrgId?: string };
+    return isUsableOrgId(result.lastKnownOrgId) ? result.lastKnownOrgId : null;
+  } catch {
+    return null;
+  }
+}
 
 async function bgFetchAndPushUsageToAllTabs(orgId: string): Promise<void> {
+  if (!isUsableOrgId(orgId)) return;
   try {
     const resp = await fetch(`https://claude.ai/api/organizations/${orgId}/usage`, {
       credentials: "include",
@@ -528,6 +560,7 @@ async function bgFetchAndPushUsageToAllTabs(orgId: string): Promise<void> {
 }
 
 async function bgFetchAndPushUsageToTab(tabId: number, orgId: string): Promise<void> {
+  if (!isUsableOrgId(orgId)) return;
   try {
     const resp = await fetch(`https://claude.ai/api/organizations/${orgId}/usage`, {
       credentials: "include",
@@ -559,8 +592,8 @@ if (typeof chrome.webRequest !== "undefined" && chrome.webRequest) {
       const orgMatch = url.match(/\/api\/organizations\/([^/]+)/);
       if (orgMatch) {
         const orgId = orgMatch[1];
-        if (orgId !== _bgOrgId) {
-          _bgOrgId = orgId;
+        if (isUsableOrgId(orgId) && orgId !== _bgOrgId) {
+          rememberBgOrgId(orgId);
           // First time seeing this org — immediately fetch usage for fast init
           bgFetchAndPushUsageToTab(details.tabId, orgId);
         }
@@ -574,6 +607,7 @@ if (typeof chrome.webRequest !== "undefined" && chrome.webRequest) {
         const orgIdx = urlParts.indexOf("organizations");
         if (orgIdx !== -1) {
           const orgId = urlParts[orgIdx + 1];
+          if (!isUsableOrgId(orgId)) return;
           // Store orgId in the alarm name — no in-memory state needed.
           const alarmName = `completion-done-${orgId}`;
           chrome.alarms?.create(alarmName, { delayInMinutes: 0 }).catch(() => {});
@@ -594,8 +628,8 @@ if (typeof chrome.webRequest !== "undefined" && chrome.webRequest) {
     if (changeInfo.status === "complete" && tab.url?.startsWith("https://claude.ai")) {
       chrome.cookies?.get({ name: "lastActiveOrg", url: "https://claude.ai" })
         .then((cookie) => {
-          if (cookie?.value) {
-            _bgOrgId = cookie.value;
+          if (isUsableOrgId(cookie?.value)) {
+            rememberBgOrgId(cookie.value);
             bgFetchAndPushUsageToTab(tabId, cookie.value);
           }
         })
@@ -779,32 +813,42 @@ async function init(): Promise<void> {
         return true;
 
       case "FORCE_FETCH_USAGE":
-        if (message.orgId) {
-          bgFetchAndPushUsageToAllTabs(message.orgId);
-          sendResponse({ success: true });
-        } else if (_bgOrgId) {
-          bgFetchAndPushUsageToAllTabs(_bgOrgId);
-          sendResponse({ success: true });
+        if (isUsableOrgId(message.orgId)) {
+          bgFetchAndPushUsageToAllTabs(message.orgId)
+            .then(() => sendResponse({ success: true }))
+            .catch(() => sendResponse({ success: false }));
+          return true;
+        } else if (isUsableOrgId(_bgOrgId)) {
+          bgFetchAndPushUsageToAllTabs(_bgOrgId)
+            .then(() => sendResponse({ success: true }))
+            .catch(() => sendResponse({ success: false }));
+          return true;
         } else {
           chrome.cookies?.get({ name: "lastActiveOrg", url: "https://claude.ai" })
-            .then((cookie) => {
-              if (cookie?.value) {
-                _bgOrgId = cookie.value;
-                bgFetchAndPushUsageToAllTabs(cookie.value);
-                sendResponse({ success: true });
-              } else {
-                sendResponse({ success: false });
+            .then(async (cookie) => {
+              const orgId = isUsableOrgId(cookie?.value) ? cookie.value : await getStoredOrgId();
+              if (isUsableOrgId(orgId)) {
+                rememberBgOrgId(orgId);
+                return bgFetchAndPushUsageToAllTabs(orgId).then(() => sendResponse({ success: true }));
               }
+              sendResponse({ success: false });
             })
             .catch(() => sendResponse({ success: false }));
           return true;
         }
-        break;
 
       case "GET_ORG_ID":
+        if (isUsableOrgId(_bgOrgId)) {
+          sendResponse(_bgOrgId);
+          break;
+        }
         chrome.cookies
           .get({ name: "lastActiveOrg", url: "https://claude.ai" })
-          .then((cookie) => sendResponse(cookie?.value ?? null))
+          .then(async (cookie) => {
+            const orgId = isUsableOrgId(cookie?.value) ? cookie.value : await getStoredOrgId();
+            if (isUsableOrgId(orgId)) rememberBgOrgId(orgId);
+            sendResponse(isUsableOrgId(orgId) ? orgId : null);
+          })
           .catch(() => sendResponse(null));
         return true;
 

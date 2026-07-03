@@ -1,4 +1,4 @@
-﻿export {};
+export {};
 
 const _themeMedia = window.matchMedia('(prefers-color-scheme: dark)');
 let _themeMode = 'auto';
@@ -204,9 +204,10 @@ async function render(): Promise<void> {
     }
   }
 
-  const msgsUsed: number = sessionMessagesUsed || 0;
-  const msgsTotal: number = sessionLimit || 45;
-  const msgsRemaining = Math.max(0, msgsTotal - msgsUsed);
+  const msgsTotal: number = sessionLimit || remaining?.messagesTotal || 45;
+  const apiRemaining: number | null = typeof remaining?.messages === 'number' ? remaining.messages : null;
+  const msgsUsed: number = sessionMessagesUsed ?? (apiRemaining !== null ? Math.max(0, msgsTotal - apiRemaining) : 0);
+  const msgsRemaining = apiRemaining ?? Math.max(0, msgsTotal - msgsUsed);
   const pct: number = sessionPct != null ? sessionPct : Math.min(100, Math.round((msgsUsed / msgsTotal) * 100));
   const tokensUsed: number = (remaining?.tokens != null) ? (remaining.tokensTotal || 90000) - remaining.tokens : 0;
   const tokensTotal: number = remaining?.tokensTotal || 90000;

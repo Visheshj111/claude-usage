@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   (document.getElementById('reset-period') as HTMLSelectElement).value = s.resetPeriod || '5h';
   (document.getElementById('token-method') as HTMLSelectElement).value = s.tokenEstimationMethod || 'chars/4';
   (document.getElementById('show-notifications') as HTMLInputElement).checked = s.showNotifications !== false;
+  (document.getElementById('show-inpage-widget') as HTMLInputElement).checked = s.showInPageWidget !== false;
   (document.getElementById('refiner-enabled') as HTMLInputElement).checked = s.refinerEnabled === true;
   (document.getElementById('theme-mode') as HTMLSelectElement).value = themeMode;
 
@@ -33,6 +34,7 @@ async function saveSettings() {
     resetPeriod: (document.getElementById('reset-period') as HTMLSelectElement).value,
     tokenEstimationMethod: (document.getElementById('token-method') as HTMLSelectElement).value,
     showNotifications: (document.getElementById('show-notifications') as HTMLInputElement).checked,
+    showInPageWidget: (document.getElementById('show-inpage-widget') as HTMLInputElement).checked,
     refinerEnabled: (document.getElementById('refiner-enabled') as HTMLInputElement).checked,
     themeMode: (document.getElementById('theme-mode') as HTMLSelectElement).value,
     limits: {
