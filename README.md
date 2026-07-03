@@ -17,7 +17,7 @@ Backend: TypeScript, JavaScript
 
 ## Project structure
 
-Backend files: `src/backend`  
+Backend files: `src/backend`.
 Note: Some backend-related logic also exists in other folders, but it is scoped to those sections.
 
 UI files: `.html` and `.css` files across the project
