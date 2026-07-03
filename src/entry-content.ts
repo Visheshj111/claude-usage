@@ -16,7 +16,7 @@
 
 import { initState, getState, onChange, startCountdownTicker, feedDetection, setApiConnected, setApiError } from "./backend/state-manager";
 import { runDetection, handleNetworkQuota, startPeriodicScan, estimateUsage } from "./backend/tracker";
-import { interceptFetch, interceptXHR, getTrackedOrgId, setOnOrgIdDetected } from "./backend/network-monitor";
+import { interceptFetch, interceptXHR, getTrackedOrgId, setOnOrgIdDetected, notifyOrgIdFromWatcher } from "./backend/network-monitor";
 import type { DetectedUsage, PlanTier } from "./backend/types";
 import { refineLocal, refineWithAPI, RefinementResult } from './refiner';
 
@@ -57,12 +57,39 @@ const TITLE_SELECTORS = [
   ".conversation-title",
   "h1",
 ];
+const messageElementIds = new WeakMap<Element, string>();
+let messageElementIdSeq = 0;
+
+function stableMessageId(el: Element): string {
+  const explicitId = el.getAttribute("data-message-id") || el.getAttribute("data-testid");
+  if (explicitId) return explicitId;
+  const existingId = messageElementIds.get(el);
+  if (existingId) return existingId;
+  const nextId = `synthetic-${++messageElementIdSeq}`;
+  messageElementIds.set(el, nextId);
+  return nextId;
+}
 
 // ── Org ID / Direct API ──
 
+const LAST_KNOWN_ORG_ID_KEY = "lastKnownOrgId";
+
+function isUsableOrgId(value: string | null | undefined): value is string {
+  if (!value) return false;
+  if (["discoverable", "undefined", "null"].includes(value)) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+function rememberContentOrgId(orgId: string): void {
+  if (!isUsableOrgId(orgId)) return;
+  _orgIdBackgroundCache = orgId;
+  notifyOrgIdFromWatcher(orgId);
+  chrome.storage?.local?.set({ [LAST_KNOWN_ORG_ID_KEY]: orgId }).catch(() => {});
+}
+
 function getOrgIdFromCookie(): string | null {
   const match = document.cookie.match(/\blastActiveOrg=([^;]+)/);
-  return match ? match[1] : null;
+  return isUsableOrgId(match?.[1]) ? match[1] : null;
 }
 
 let _orgIdBackgroundCache: string | null = null;
@@ -77,25 +104,44 @@ interface PlanTierCacheEntry {
 
 type PlanTierCache = Record<string, PlanTierCacheEntry>;
 
+async function getOrgIdFromStorage(): Promise<string | null> {
+  try {
+    const result = await chrome.storage.local.get(LAST_KNOWN_ORG_ID_KEY) as { lastKnownOrgId?: string };
+    return isUsableOrgId(result.lastKnownOrgId) ? result.lastKnownOrgId : null;
+  } catch {
+    return null;
+  }
+}
+
 async function getOrgIdFromBackground(): Promise<string | null> {
-  if (_orgIdBackgroundCache) return _orgIdBackgroundCache;
+  if (isUsableOrgId(_orgIdBackgroundCache)) return _orgIdBackgroundCache;
   if (_orgIdBgPromise) return _orgIdBgPromise;
   _orgIdBgPromise = (async () => {
     const resp = await sendRuntimeMessage<string>({ type: "GET_ORG_ID" });
-    if (typeof resp === "string" && resp) {
-      _orgIdBackgroundCache = resp;
+    if (isUsableOrgId(resp)) {
+      rememberContentOrgId(resp);
       return resp;
     }
     return null;
   })();
-  return _orgIdBgPromise;
+  const result = await _orgIdBgPromise;
+  if (!result) _orgIdBgPromise = null;
+  return result;
 }
 
 async function resolveOrgId(): Promise<string | null> {
   const tracked = getTrackedOrgId();
-  if (tracked) return tracked;
+  if (isUsableOrgId(tracked)) return tracked;
   const cookie = getOrgIdFromCookie();
-  if (cookie) return cookie;
+  if (cookie) {
+    rememberContentOrgId(cookie);
+    return cookie;
+  }
+  const stored = await getOrgIdFromStorage();
+  if (stored) {
+    rememberContentOrgId(stored);
+    return stored;
+  }
   return getOrgIdFromBackground();
 }
 
@@ -188,11 +234,24 @@ async function fetchPlanInfo(orgId: string): Promise<void> {
   }
 }
 
-async function fetchUsageFromAPI(): Promise<void> {
-  const orgId = await resolveOrgId();
-  if (!orgId) {
-    return; // not yet available — keep current state, try next interval
+let usageFetchPromise: Promise<boolean> | null = null;
+
+async function fetchUsageFromAPI(explicitOrgId?: string | null, force = false): Promise<boolean> {
+  if (usageFetchPromise && !force) return usageFetchPromise;
+  const promise = fetchUsageFromAPIInner(explicitOrgId);
+  usageFetchPromise = promise;
+  try {
+    return await promise;
+  } finally {
+    if (usageFetchPromise === promise) usageFetchPromise = null;
   }
+}
+
+async function fetchUsageFromAPIInner(explicitOrgId?: string | null): Promise<boolean> {
+  const candidateOrgId = explicitOrgId ?? await resolveOrgId();
+  const orgId = isUsableOrgId(candidateOrgId) ? candidateOrgId : null;
+  if (!orgId) return false;
+  rememberContentOrgId(orgId);
 
   try {
     const response = await fetch(`https://claude.ai/api/organizations/${orgId}/usage`, {
@@ -202,152 +261,58 @@ async function fetchUsageFromAPI(): Promise<void> {
     if (!response.ok) {
       console.warn(`[CUT] /usage returned ${response.status} — API error`);
       setApiError(response.status);
-      return;
+      return false;
     }
 
     const data: Record<string, unknown> = await response.json();
-
-    if (!data.five_hour || typeof data.five_hour !== "object") {
+    const detected = parseUsagePayload(data, orgId);
+    if (!detected) {
       setApiConnected(false);
-      return;
+      return false;
     }
 
-    // API call succeeded — mark as connected
     setApiConnected(true);
-
-    const fh = data.five_hour as Record<string, unknown>;
-
-    const detected: DetectedUsage = {
-      source: "network",
-      confidence: 0.95,
-    };
-
-    if (typeof fh.utilization === "number") {
-      detected.usagePercent = fh.utilization;
-    }
-
-    if (typeof fh.max_messages === "number" && fh.max_messages > 0) {
-      detected.sessionLimit = fh.max_messages;
-      if (typeof fh.utilization === "number") {
-        const used = Math.round((fh.utilization / 100) * fh.max_messages);
-        detected.remainingMessages = fh.max_messages - used;
-      }
-    }
-
-    if (typeof fh.resets_at === "string") {
-      const ts = new Date(fh.resets_at).getTime();
-      if (!isNaN(ts)) {
-        detected.resetTimestamp = ts;
-      }
-    }
-
-    if (fh.utilization !== undefined && Number(fh.utilization) >= 100) {
-      detected.isRateLimited = true;
-    }
-
-    // Hard limit (maxed) data from API
-    if (data.maxed && typeof data.maxed === "object") {
-      const mx = data.maxed as Record<string, unknown>;
-      detected.limitType = "hard";
-      if (typeof mx.resets_at === "string") {
-        const ts = new Date(mx.resets_at).getTime();
-        if (!isNaN(ts)) {
-          detected.hardLimitResetAt = ts;
-          detected.resetTimestamp = ts;
-        }
-      }
-      if (typeof mx.messages_used === "number" && typeof fh.max_messages === "number" && fh.max_messages > 0) {
-        detected.sessionMessagesUsed = mx.messages_used as number;
-        detected.sessionLimit = fh.max_messages as number;
-      }
-      detected.isRateLimited = true;
-    } else {
-      detected.limitType = "soft";
-    }
-
-    // Weekly usage (seven_day)
-    if (data.seven_day && typeof data.seven_day === "object") {
-      const sd = data.seven_day as Record<string, unknown>;
-      const weekly = parseWeeklyField(sd);
-      if (weekly) detected.weeklyUsage = weekly;
-    }
-
-    // Per-model weekly breakdowns (Max plans)
-    if (data.seven_day_sonnet && typeof data.seven_day_sonnet === "object") {
-      const sd = data.seven_day_sonnet as Record<string, unknown>;
-      const w = parseWeeklyField(sd);
-      if (w) detected.weeklySonnetUsage = w;
-    }
-
-    if (data.seven_day_opus && typeof data.seven_day_opus === "object") {
-      const sd = data.seven_day_opus as Record<string, unknown>;
-      const w = parseWeeklyField(sd);
-      if (w) detected.weeklyOpusUsage = w;
-    }
-
     feedDetection(detected);
+    return true;
   } catch {
     setApiConnected(false);
+    return false;
   }
 }
 
-function parseWeeklyField(obj: Record<string, unknown>): import("./backend/types").WeeklyUsage | null {
-  if (typeof obj.utilization !== "number" && typeof obj.max_messages !== "number") return null;
-  return {
-    usagePercent: typeof obj.utilization === "number" ? obj.utilization : null,
-    messagesUsed: typeof obj.utilization === "number" && typeof obj.max_messages === "number"
-      ? Math.round((obj.utilization / 100) * obj.max_messages)
-      : null,
-    maxMessages: typeof obj.max_messages === "number" ? obj.max_messages : null,
-    resetsAt: typeof obj.resets_at === "string" ? new Date(obj.resets_at).getTime() : null,
-  };
+async function refreshUsageAndUI(force = false, explicitOrgId?: string | null): Promise<boolean> {
+  const orgId = explicitOrgId ?? await resolveOrgId();
+  const fetched = await fetchUsageFromAPI(orgId, force);
+  if (!fetched && force) {
+    await sendRuntimeMessage({ type: "FORCE_FETCH_USAGE", orgId });
+    await new Promise((resolve) => setTimeout(resolve, 750));
+  }
+  updateUI();
+  return fetched;
 }
 
-/**
- * Handle usage data pushed proactively from the background service worker.
- * This is the same parsing logic as fetchUsageFromAPI but skips orgId
- * resolution and the fetch — the background already did both.
- */
-function handleBgUsagePush(data: Record<string, unknown>, orgId: string): void {
-  if (!data || !data.five_hour || typeof data.five_hour !== "object") return;
-
-  setApiConnected(true);
-  
-  // Immediately inform the network monitor of the orgId
-  window.dispatchEvent(new CustomEvent("cut-org-id", { detail: orgId }));
+function parseUsagePayload(data: Record<string, unknown>, orgId?: string): DetectedUsage | null {
+  if (!data || !data.five_hour || typeof data.five_hour !== "object") return null;
 
   const fh = data.five_hour as Record<string, unknown>;
-  const detected: DetectedUsage = { source: "network", confidence: 0.95 };
+  const detected: DetectedUsage = {
+    source: "network",
+    confidence: 0.95,
+    hasAccurateData: true,
+  };
+  if (orgId) detected.orgId = orgId;
 
-  if (typeof fh.utilization === "number") {
-    detected.usagePercent = fh.utilization;
-  }
-  if (typeof fh.max_messages === "number" && fh.max_messages > 0) {
-    detected.sessionLimit = fh.max_messages;
-    if (typeof fh.utilization === "number") {
-      const used = Math.round((fh.utilization / 100) * fh.max_messages);
-      detected.remainingMessages = fh.max_messages - used;
-    }
-  }
-  if (typeof fh.resets_at === "string") {
-    const ts = new Date(fh.resets_at).getTime();
-    if (!isNaN(ts)) detected.resetTimestamp = ts;
-  }
-  if (fh.utilization !== undefined && Number(fh.utilization) >= 100) {
-    detected.isRateLimited = true;
-  }
+  parseUsageWindow(fh, detected);
 
   if (data.maxed && typeof data.maxed === "object") {
     const mx = data.maxed as Record<string, unknown>;
     detected.limitType = "hard";
-    if (typeof mx.resets_at === "string") {
-      const ts = new Date(mx.resets_at).getTime();
-      if (!isNaN(ts)) { detected.hardLimitResetAt = ts; detected.resetTimestamp = ts; }
+    const hardReset = timestampFromValue(mx.resets_at ?? mx.reset_at ?? mx.window_reset_at);
+    if (hardReset) {
+      detected.hardLimitResetAt = hardReset;
+      detected.resetTimestamp = hardReset;
     }
-    if (typeof mx.messages_used === "number" && typeof fh.max_messages === "number" && fh.max_messages > 0) {
-      detected.sessionMessagesUsed = mx.messages_used as number;
-      detected.sessionLimit = fh.max_messages as number;
-    }
+    if (typeof mx.messages_used === "number") detected.sessionMessagesUsed = mx.messages_used;
     detected.isRateLimited = true;
   } else {
     detected.limitType = "soft";
@@ -366,8 +331,78 @@ function handleBgUsagePush(data: Record<string, unknown>, orgId: string): void {
     if (w) detected.weeklyOpusUsage = w;
   }
 
-  // Also feed orgId and plan info
-  detected.orgId = orgId;
+  return detected;
+}
+
+function parseUsageWindow(windowData: Record<string, unknown>, detected: DetectedUsage): void {
+  const utilization = numberFromValue(windowData.utilization);
+  const maxMessages = numberFromValue(windowData.max_messages ?? windowData.message_limit ?? windowData.limit);
+  const remainingMessages = numberFromValue(windowData.remaining_messages ?? windowData.messages_remaining ?? windowData.remaining);
+  const messagesUsed = numberFromValue(windowData.messages_used ?? windowData.used_messages ?? windowData.used);
+  const resetTimestamp = timestampFromValue(windowData.resets_at ?? windowData.reset_at ?? windowData.window_reset_at);
+
+  if (utilization !== null) detected.usagePercent = utilization;
+  if (maxMessages !== null && maxMessages > 0) detected.sessionLimit = maxMessages;
+
+  if (remainingMessages !== null) {
+    detected.remainingMessages = Math.max(0, Math.round(remainingMessages));
+  } else if (maxMessages !== null && utilization !== null) {
+    const used = Math.round((utilization / 100) * maxMessages);
+    detected.remainingMessages = Math.max(0, maxMessages - used);
+  }
+
+  if (messagesUsed !== null) {
+    detected.sessionMessagesUsed = Math.max(0, Math.round(messagesUsed));
+  } else if (maxMessages !== null && detected.remainingMessages !== undefined) {
+    detected.sessionMessagesUsed = Math.max(0, maxMessages - detected.remainingMessages);
+  } else if (maxMessages !== null && utilization !== null) {
+    detected.sessionMessagesUsed = Math.max(0, Math.round((utilization / 100) * maxMessages));
+  }
+
+  if (resetTimestamp) detected.resetTimestamp = resetTimestamp;
+  if (utilization !== null && utilization >= 100) detected.isRateLimited = true;
+}
+
+function numberFromValue(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function timestampFromValue(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value > 1e12 ? value : value * 1000;
+  if (typeof value === "string" && value.trim()) {
+    const ts = new Date(value).getTime();
+    return Number.isFinite(ts) ? ts : null;
+  }
+  return null;
+}
+
+function parseWeeklyField(obj: Record<string, unknown>): import("./backend/types").WeeklyUsage | null {
+  if (typeof obj.utilization !== "number" && typeof obj.max_messages !== "number") return null;
+  return {
+    usagePercent: typeof obj.utilization === "number" ? obj.utilization : null,
+    messagesUsed: typeof obj.utilization === "number" && typeof obj.max_messages === "number"
+      ? Math.round((obj.utilization / 100) * obj.max_messages)
+      : null,
+    maxMessages: typeof obj.max_messages === "number" ? obj.max_messages : null,
+    resetsAt: timestampFromValue(obj.resets_at),
+  };
+}
+
+/**
+ * Handle usage data pushed proactively from the background service worker.
+ */
+function handleBgUsagePush(data: Record<string, unknown>, orgId: string): void {
+  if (!isUsableOrgId(orgId)) return;
+  const detected = parseUsagePayload(data, orgId);
+  if (!detected) return;
+
+  setApiConnected(true);
+  rememberContentOrgId(orgId);
   feedDetection(detected);
   fetchPlanInfo(orgId);
 }
@@ -456,10 +491,20 @@ async function init(): Promise<void> {
     void sendRuntimeMessage({ type: "STATE_UPDATE", state: newState });
   });
 
-  // 7. Old: inject styles & UI
-  injectStyles();
-  injectUI();
+  const initialSettings = await sendRuntimeMessage<any>({ type: "GET_SETTINGS" }) ?? {};
 
+  // 7. Old: inject styles & UI
+  setInPageWidgetVisible(initialSettings?.showInPageWidget !== false);
+
+
+  const onSettingsChanged = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
+    if (areaName !== "local" || !changes.settings) return;
+    const nextSettings = (changes.settings.newValue || {}) as { showInPageWidget?: boolean; themeMode?: string };
+    setInPageWidgetVisible(nextSettings.showInPageWidget !== false);
+    if (nextSettings.themeMode) detectTheme(nextSettings.themeMode);
+  };
+  chrome.storage.onChanged.addListener(onSettingsChanged);
+  cleanupFns.push(() => chrome.storage.onChanged.removeListener(onSettingsChanged));
   // 8. (Removed blocking scroll to load all messages to improve startup performance)
 
   // 9. Old: start tracking
@@ -474,29 +519,28 @@ async function init(): Promise<void> {
   //    was detected yet, feed an estimated state so the timer isn't blank
   const existingMsgs = TRACK.lastUserCount + TRACK.lastAssistantCount;
   if (existingMsgs > 0 && !getState().resetTimestamp) {
-    const resp = await sendRuntimeMessage<any>({ type: "GET_SETTINGS" });
-    if (resp) {
-      const limit = resp?.limits?.dailyMessages ?? 45;
-      const windowMs = resp?.limits?.sessionWindowMs ?? 5 * 60 * 60 * 1000;
+    if (initialSettings) {
+      const limit = initialSettings?.limits?.dailyMessages ?? 45;
+      const windowMs = initialSettings?.limits?.sessionWindowMs ?? 5 * 60 * 60 * 1000;
       estimateUsage(TRACK.lastUserCount, TRACK.lastAssistantCount, limit, windowMs);
     }
   }
 
     // 10. Direct API polling: fetch accurate usage data from Claude's /usage endpoint
   // Fire immediately on init
-  fetchUsageFromAPI();
+  void refreshUsageAndUI(true);
 
   // Also fetch plan info (tier / capabilities)
   const orgIdForPlan = resolveOrgId();
   orgIdForPlan.then((oid) => { if (oid) fetchPlanInfo(oid); });
 
   // Long-running polling: fetch accurate usage data from Claude's /usage endpoint every 30s
-  const usageApiInterval = setInterval(fetchUsageFromAPI, 10000);
+  const usageApiInterval = setInterval(() => { void refreshUsageAndUI(false); }, 10000);
   cleanupFns.push(() => clearInterval(usageApiInterval));
   
   // Fast retry: poll every 3s for the first 30s to catch orgId as soon as it's available
   const fastRetryInterval = setInterval(() => {
-    fetchUsageFromAPI();
+    void refreshUsageAndUI(false);
   }, 3000);
   const fastRetryTimer = setTimeout(() => {
     clearInterval(fastRetryInterval);
@@ -509,15 +553,27 @@ async function init(): Promise<void> {
   cleanupFns.push(() => { clearTimeout(fastRetryTimer); clearInterval(fastRetryInterval); });
 
   // When the network interceptor catches the first API call with an orgId, fire immediately
-  setOnOrgIdDetected(() => {
-    fetchUsageFromAPI();
-    const trackedOrgId = getTrackedOrgId();
-    if (trackedOrgId) fetchPlanInfo(trackedOrgId);
+  setOnOrgIdDetected((orgId) => {
+    void refreshUsageAndUI(true, orgId);
+    fetchPlanInfo(orgId);
   });
 
   // 11. Check for webRequest quota data captured before content script loaded
   const pendingQuota = await sendRuntimeMessage({ type: "GET_WEBREQUEST_QUOTA" });
   if (pendingQuota) handleNetworkQuota(pendingQuota);
+
+  // 11b. Recover a completion event that fired before this content script's
+  //      cut-completion-done listener was registered (e.g. after extension reload).
+  //      watcher.js persists the last orgId on window.__cutLastCompletionOrgId.
+  {
+    const staleOrgId = (window as any).__cutLastCompletionOrgId as string | undefined;
+    const staleTs = (window as any).__cutCompletionTimestamp as number | undefined;
+    if (staleOrgId && staleTs && Date.now() - staleTs < 30_000) {
+      console.debug("[CUT] Recovering missed completion event, orgId:", staleOrgId);
+      notifyOrgIdFromWatcher(staleOrgId);
+      void refreshUsageAndUI(true, staleOrgId);
+    }
+  }
 
   TRACK.uiUpdateInterval = setInterval(updateUI, 1000);
 
@@ -684,7 +740,7 @@ function findMessageElements(): Element[] {
   const seen = new Set<string>();
   for (const sel of MESSAGE_SELECTORS) {
     for (const el of document.querySelectorAll(sel)) {
-      const id = el.getAttribute("data-message-id") || el.getAttribute("data-testid") || el.outerHTML.slice(0, 80);
+      const id = stableMessageId(el);
       if (!seen.has(id)) { seen.add(id); results.push(el); }
     }
   }
@@ -723,10 +779,12 @@ function startObserver(): void {
 
 // ── Old: In-page UI Injection ──
 function injectStyles(): void {
-  const link = document.createElement("link");
-  link.rel = "stylesheet";
+  if (document.getElementById("cut-style")) return;
   const stylesheetUrl = getRuntimeUrl("dist/inpage/inpage.css");
   if (!stylesheetUrl) return;
+  const link = document.createElement("link");
+  link.id = "cut-style";
+  link.rel = "stylesheet";
   link.href = stylesheetUrl;
   document.head.appendChild(link);
 }
@@ -813,6 +871,8 @@ function injectUI(): void {
     </div>
   `;
 
+  attachUIEvents();
+
   // Part A — Button injection (only when refinerEnabled)
   chrome.storage.local.get('settings').then(({ settings }) => {
     const s = (settings || {}) as { refinerEnabled?: boolean; themeMode?: string };
@@ -861,6 +921,22 @@ function injectUI(): void {
     attachUIEvents();
     if (s.themeMode) detectTheme(s.themeMode);
   });
+}
+
+function removeInPageUI(): void {
+  document.getElementById("cut-container")?.remove();
+  document.getElementById("cut-refine-btn")?.remove();
+  document.getElementById("cut-refine-overlay")?.remove();
+}
+
+function setInPageWidgetVisible(visible: boolean): void {
+  if (visible) {
+    injectStyles();
+    injectUI();
+    updateUI();
+  } else {
+    removeInPageUI();
+  }
 }
 
 // ── Composer Refiner Buttons ───────────────────────────────────────────────
@@ -1086,10 +1162,7 @@ function attachUIEvents(): void {
       btn.style.transform = 'rotate(180deg)';
     }
     runDetection("manual");
-    const orgId = getTrackedOrgId();
-    if (orgId) {
-      await sendRuntimeMessage({ type: "FORCE_FETCH_USAGE", orgId });
-    }
+    await refreshUsageAndUI(true);
     if (btn) {
       setTimeout(() => { btn.style.transform = ''; }, 200);
     }
@@ -1552,7 +1625,7 @@ function findDOMExportMessages(): Element[] {
   const seen = new Set<string>();
   for (const sel of selectors) {
     for (const el of document.querySelectorAll(sel)) {
-      const id = el.getAttribute("data-message-id") || el.getAttribute("data-testid") || el.outerHTML.slice(0, 80);
+      const id = stableMessageId(el);
       if (!seen.has(id)) { seen.add(id); results.push(el); }
     }
   }
@@ -1628,16 +1701,33 @@ try {
 // The injected script (entry-injector.ts at document_start) wraps fetch in the
 // page's main world and dispatches CustomEvent('cut-quota') when it detects
 // Claude quota fields in SSE streams or JSON responses.
+
+function schedulePostCompletionUsageRefresh(orgId: string | null): void {
+  if (orgId) notifyOrgIdFromWatcher(orgId);
+  void refreshUsageAndUI(true, orgId);
+  setTimeout(() => { void refreshUsageAndUI(true, orgId); }, 1500);
+  setTimeout(() => { void refreshUsageAndUI(true, orgId); }, 5000);
+  setTimeout(() => { void refreshUsageAndUI(true, orgId); }, 12000);
+}
+// cut-completion-done: SSE stream fully consumed — Claude has finished responding.
+// e.detail is the orgId extracted from the completion URL by watcher.js.
+// We use it directly to avoid the async resolveOrgId() waterfall that can fail
+// when the background service worker just woke from suspension.
+window.addEventListener("cut-completion-done", ((e: CustomEvent<string>) => {
+  schedulePostCompletionUsageRefresh(e.detail || null);
+}) as EventListener);
+
+
+window.addEventListener("cut-conversation-synced", ((e: CustomEvent<{ orgId?: string }>) => {
+  schedulePostCompletionUsageRefresh(e.detail?.orgId || null);
+}) as EventListener);
 window.addEventListener("cut-quota", ((e: CustomEvent) => {
   const data = e.detail;
   if (!data || typeof data !== "object") return;
   const quota = mapEventToQuota(data);
   if (quota) {
     handleNetworkQuota(quota);
-    // Immediately refresh from the authoritative /usage endpoint —
-    // the cut-quota event fires mid-stream so this runs within milliseconds
-    // of Claude sending its first quota field in the response.
-    fetchUsageFromAPI();
+    void refreshUsageAndUI(false);
   }
 }) as EventListener);
 

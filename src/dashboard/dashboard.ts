@@ -46,13 +46,15 @@ async function refresh(): Promise<void> {
 
 interface DayData { messagesSent?: number; messagesReceived?: number; tokensSent?: number; tokensReceived?: number; conversations?: number; }
 interface SessionData { startTime?: number; }
-interface OverviewData { daily?: DayData; remaining?: { messagesTotal?: number; tokensTotal?: number }; resetIn?: number; session?: SessionData; settings?: { resetPeriod?: string }; }
+interface OverviewData { daily?: DayData; remaining?: { messages?: number; messagesTotal?: number; tokensTotal?: number }; resetIn?: number; resetTimestamp?: number; session?: SessionData; settings?: { resetPeriod?: string }; sessionPct?: number | null; sessionMessagesUsed?: number | null; sessionLimit?: number | null; }
 
 function renderOverview(d: OverviewData): void {
-  const { daily = {}, remaining = {}, resetIn = 0, session, settings = {} } = d;
-  const msgs = (daily.messagesSent || 0) + (daily.messagesReceived || 0);
+  const { daily = {}, remaining = {}, resetIn = 0, resetTimestamp, session, settings = {} } = d;
+  const localMsgs = (daily.messagesSent || 0) + (daily.messagesReceived || 0);
+  const msgsTotal = d.sessionLimit || remaining.messagesTotal || 100;
+  const apiRemaining = typeof remaining.messages === 'number' ? remaining.messages : null;
+  const msgs = d.sessionMessagesUsed ?? (apiRemaining !== null ? Math.max(0, msgsTotal - apiRemaining) : localMsgs);
   const tokens = (daily.tokensSent || 0) + (daily.tokensReceived || 0);
-  const msgsTotal = remaining.messagesTotal || 100;
   const tokensTotal = remaining.tokensTotal || 50000;
 
   const periodBadge = document.getElementById('period-badge');
@@ -71,7 +73,7 @@ function renderOverview(d: OverviewData): void {
   const timer = document.getElementById('ov-session');
   if (timer) timer.textContent = session?.startTime ? formatDuration(Date.now() - session.startTime) : '--:--:--';
 
-  const msgPct = Math.min(100, Math.round((msgs / msgsTotal) * 100));
+  const msgPct = d.sessionPct != null ? d.sessionPct : Math.min(100, Math.round((msgs / msgsTotal) * 100));
   const tokPct = Math.min(100, Math.round((tokens / tokensTotal) * 100));
 
   setBar('bar-messages', msgPct);
@@ -80,7 +82,7 @@ function renderOverview(d: OverviewData): void {
   setNums('nums-tokens', tokens, tokensTotal);
 
   const resetEl = document.getElementById('reset-timer');
-  if (resetEl) resetEl.textContent = formatDuration(resetIn);
+  if (resetEl) resetEl.textContent = resetTimestamp && resetTimestamp > Date.now() ? formatDuration(resetTimestamp - Date.now()) : formatDuration(resetIn);
 
   const dot = document.getElementById('status-dot');
   if (dot) dot.style.background = session?.startTime ? 'var(--safe)' : 'var(--text-muted)';

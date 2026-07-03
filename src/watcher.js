@@ -6,29 +6,66 @@
       var url = typeof i === 'string' ? i : i instanceof URL ? i.href : i.url;
       if (url && /claude\.ai\/api\//.test(url)) {
         var orgMatch = url.match(/\/api\/organizations\/([^/]+)/);
-        if (orgMatch) {
-          window.dispatchEvent(new CustomEvent('cut-org-id', {detail: orgMatch[1]}));
+        var orgId = orgMatch && orgMatch[1];
+        if (orgId) {
+          window.dispatchEvent(new CustomEvent('cut-org-id', {detail: orgId}));
         }
         respPromise.then(function(resp) {
           var ct = resp.headers.get('content-type') || '';
           if (ct.indexOf('text/event-stream') !== -1) {
-            readSSE(resp.clone());
+            readSSE(resp.clone(), orgId);
           } else if (ct.indexOf('application/json') !== -1) {
-            readJSON(resp.clone());
+            readJSON(resp.clone(), orgId, url);
           }
         }).catch(function(){});
       }
     } catch(e) {}
     return respPromise;
   };
-  function readSSE(r) {
-    var reader = r.body.getReader();
+
+  function isConversationSyncUrl(url) {
+    if (!url) return false;
+    return /\/api\/organizations\/[^/]+\/chat_conversations\/[^/?]+/.test(url) &&
+      (url.indexOf('tree=True') !== -1 || url.indexOf('tree=true') !== -1) &&
+      (url.indexOf('render_all_tools=true') !== -1 || url.indexOf('render_all_tools=True') !== -1);
+  }
+
+  function emitCompletionDone(orgId) {
+    if (orgId) {
+      window.__cutLastCompletionOrgId = orgId;
+      window.__cutCompletionTimestamp = Date.now();
+      window.dispatchEvent(new CustomEvent('cut-completion-done', {detail: orgId}));
+    }
+  }
+
+  function emitConversationSynced(orgId, url) {
+    if (orgId) {
+      window.__cutLastCompletionOrgId = orgId;
+      window.__cutCompletionTimestamp = Date.now();
+      window.dispatchEvent(new CustomEvent('cut-conversation-synced', {detail: {orgId: orgId, url: url}}));
+    }
+  }
+
+  function readSSE(r, orgId) {
+    var reader = r.body && r.body.getReader();
+    if (!reader) return;
     var dec = new TextDecoder();
     var buf = '';
+    var doneEmitted = false;
+
+    function markDone() {
+      if (doneEmitted) return;
+      doneEmitted = true;
+      emitCompletionDone(orgId);
+    }
+
     function pump() {
       return reader.read().then(function(_a) {
         var done = _a.done, value = _a.value;
-        if (done) return;
+        if (done) {
+          markDone();
+          return;
+        }
         buf += dec.decode(value, {stream: true});
         var lines = buf.split('\n');
         buf = lines.pop() || '';
@@ -36,7 +73,11 @@
           var line = lines[i];
           if (line.indexOf('data: ') !== 0) continue;
           var raw = line.slice(6).trim();
-          if (raw === '[DONE]' || !raw) continue;
+          if (raw === '[DONE]') {
+            markDone();
+            continue;
+          }
+          if (!raw) continue;
           try {
             var obj = JSON.parse(raw);
             if (obj.message_limit || obj.usage_metadata) {
@@ -45,14 +86,18 @@
           } catch(e) {}
         }
         return pump();
-      }).catch(function(){});
+      }).catch(function(){ markDone(); });
     }
     return pump();
   }
-  function readJSON(r) {
+
+  function readJSON(r, orgId, url) {
     r.json().then(function(obj) {
       if (obj && (obj.message_limit || obj.usage_metadata)) {
         window.dispatchEvent(new CustomEvent('cut-quota', {detail: obj}));
+      }
+      if (isConversationSyncUrl(url)) {
+        emitConversationSynced(orgId, url);
       }
     }).catch(function(){});
   }

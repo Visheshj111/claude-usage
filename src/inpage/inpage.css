@@ -52,7 +52,7 @@
   right: 20px;
   z-index: 999999;
   font-family: var(--cut-font);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--cut-text);
   line-height: 1.3;
   -webkit-font-smoothing: antialiased;
@@ -67,8 +67,8 @@
 
 /* ── Collapsed Badge ── */
 #cut-badge {
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -77,8 +77,8 @@
   border: 0.5px solid var(--cut-border);
   color: var(--cut-text);
   font-family: var(--cut-mono);
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
   transition: transform 0.15s ease;
   user-select: none;
@@ -100,7 +100,7 @@
 
 /* ── Expanded Panel ── */
 #cut-panel {
-  width: 220px;
+  width: 300px;
   background: var(--cut-bg);
   border: 0.5px solid var(--cut-border2);
   border-radius: var(--cut-radius-card);
@@ -114,13 +114,13 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 10px 6px;
+  padding: 10px 12px 8px;
   border-bottom: 0.5px solid var(--cut-border);
 }
 
 .cut-header-label {
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--cut-text2);
 }
 
@@ -132,8 +132,8 @@
 
 /* Small badge inside panel header */
 .cut-badge-sm {
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -142,8 +142,8 @@
   border: 0.5px solid var(--cut-border);
   color: var(--cut-text);
   font-family: var(--cut-mono);
-  font-size: 9px;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .cut-badge-sm.warn {
@@ -163,9 +163,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  font-size: 10px;
+  width: 24px;
+  height: 24px;
+  font-size: 13px;
   color: var(--cut-text3);
   cursor: pointer;
   border-radius: var(--cut-radius-sm);
@@ -180,7 +180,7 @@
 
 /* ── Progress Section ── */
 .cut-peak-banner {
-  padding: 6px 10px 7px;
+  padding: 8px 12px 9px;
   border-bottom: 0.5px solid var(--cut-border);
   background: var(--cut-bg2);
 }
@@ -199,7 +199,7 @@
   align-items: center;
   gap: 5px;
   color: var(--cut-text2);
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.3;
 }
 
@@ -208,8 +208,8 @@
 }
 
 .cut-peak-dot {
-  width: 5px;
-  height: 5px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   flex: 0 0 auto;
   background: var(--cut-text3);
@@ -232,8 +232,8 @@
 .cut-peak-countdown {
   flex: 0 0 auto;
   font-family: var(--cut-mono);
-  font-size: 9px;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--cut-text2);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -574,8 +574,8 @@
   border-radius: 6px;
   border: 0.5px solid var(--cut-border2);
   background: none;
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--cut-text2);
   cursor: pointer;
   font-family: var(--cut-font);

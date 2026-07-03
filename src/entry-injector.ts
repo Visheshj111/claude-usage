@@ -23,16 +23,16 @@ function injectWatcher(): void {
     const script = document.createElement('script');
     script.src = chrome.runtime.getURL('dist/watcher.js');
     script.id = 'cut-watcher';
+    script.onload = () => script.remove();
     document.documentElement.appendChild(script);
-    script.remove();
   } catch {
     document.addEventListener('DOMContentLoaded', () => {
       try {
         const s = document.createElement('script');
         s.src = chrome.runtime.getURL('dist/watcher.js');
         s.id = 'cut-watcher';
+        s.onload = () => s.remove();
         document.documentElement.appendChild(s);
-        s.remove();
       } catch {}
     });
   }
