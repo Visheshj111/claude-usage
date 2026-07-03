@@ -128,8 +128,20 @@ export function feedDetection(detected: DetectedUsage): UsageState {
   }
 
   if (detected.resetTimestamp !== undefined) {
+    // If the detection provided an explicit session window duration/start, prefer that
+    if (detected.sessionWindowMs !== undefined && detected.sessionWindowMs !== null) {
+      currentState.sessionWindowMs = detected.sessionWindowMs;
+    }
+    if (detected.sessionWindowStartTs !== undefined && detected.sessionWindowStartTs !== null) {
+      currentState.sessionWindowStartTs = detected.sessionWindowStartTs;
+    }
+
     currentState.resetTimestamp = detected.resetTimestamp;
-    currentState.sessionWindowStartTs = detected.resetTimestamp - currentState.sessionWindowMs;
+    // If we still don't have an explicit sessionWindowStartTs but we have a window duration,
+    // derive the start from the reset timestamp.
+    if ((!currentState.sessionWindowStartTs || currentState.sessionWindowStartTs === null) && currentState.sessionWindowMs) {
+      currentState.sessionWindowStartTs = detected.resetTimestamp - currentState.sessionWindowMs;
+    }
     updateCountdown(currentState);
   }
 

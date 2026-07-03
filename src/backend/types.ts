@@ -78,6 +78,8 @@ export interface DetectedUsage {
   sessionMessagesUsed?: number;
   isRateLimited?: boolean;
   resetTimestamp?: number;
+  sessionWindowStartTs?: number | null;
+  sessionWindowMs?: number | null;
   retireAfterSeconds?: number;
   confidence: number;
   source: DataSource;
@@ -128,7 +130,7 @@ export function emptyUsage(source: DataSource = "unknown"): UsageState {
     sessionLimit: null,
     sessionMessagesUsed: null,
     sessionWindowStartTs: null,
-    sessionWindowMs: 5 * 60 * 60 * 1000,
+    sessionWindowMs: 0,
     isRateLimited: false,
     resetTimestamp: null,
     countdownMs: null,

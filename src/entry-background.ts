@@ -19,8 +19,10 @@
  * 4. checkMilestone(): better ratios & remaining-message warnings
  */
 
-import { initState, getState, onChange, startCountdownTicker, resetState } from "./backend/state-manager";
+import { initState, getState, onChange, startCountdownTicker, resetState, feedDetection } from "./backend/state-manager";
+import { parseUsagePayload } from './backend/usage-parser';
 import type { UsageState, NetworkQuota } from "./backend/types";
+import { NOTIFICATIONS } from './config';
 
 // ── Settings interface ──
 interface Settings {
@@ -397,8 +399,14 @@ async function getAllData(): Promise<Record<string, unknown>> {
 
   const backendState = getState();
   const sessionStorageData = rawSession as { startTime?: number } | null;
+  const defaultWindowMs = 5 * 60 * 60 * 1000;
+  const sessionWindowMsFromBackend = backendState.sessionWindowMs && backendState.sessionWindowMs > 0
+    ? backendState.sessionWindowMs
+    : undefined;
+  const sessionWindowMs = sessionWindowMsFromBackend ?? limits.sessionWindowMs ?? defaultWindowMs;
+
   const windowStartTs = backendState.resetTimestamp
-    ? backendState.resetTimestamp - (limits.sessionWindowMs || 5 * 60 * 60 * 1000)
+    ? backendState.resetTimestamp - sessionWindowMs
     : sessionStorageData?.startTime ?? undefined;
   const nextReset = backendState.resetTimestamp
     ? backendState.resetTimestamp
@@ -436,7 +444,7 @@ async function getAllData(): Promise<Record<string, unknown>> {
     sessionPct,
     sessionLimit,
     sessionMessagesUsed,
-    sessionWindowMs: limits.sessionWindowMs ?? (5 * 60 * 60 * 1000),
+    sessionWindowMs: sessionWindowMs,
     source: backendState.source,
     isRateLimited: backendState.isRateLimited,
     resetTimestamp: backendState.resetTimestamp,
@@ -454,6 +462,7 @@ async function getAllData(): Promise<Record<string, unknown>> {
     weeklyOpusUsage: backendState.weeklyOpusUsage,
     isPeakHours: backendState.isPeakHours,
     peakHoursTransitionAt: backendState.peakHoursTransitionAt,
+    lastFetchedAt: (await chrome.storage.local.get('lastFetchedAt')).lastFetchedAt || null,
   };
 }
 
@@ -479,18 +488,21 @@ function checkMilestone(dayUsage: DayUsage, settings: Settings): void {
   const pct = Math.round((total / limit) * 100);
   const remaining = limit - total;
 
-  const key = pct >= 100 ? 100 : remaining <= 5 ? -remaining : Math.floor(pct / 25) * 25;
+  const milestones = NOTIFICATIONS.milestones;
+  const lowRem = NOTIFICATIONS.lowRemaining;
+
+  const key = pct >= 100 ? 100 : lowRem.includes(remaining) ? -remaining : Math.floor(pct / 25) * 25;
   if (notifiedMilestones.has(key)) return;
   notifiedMilestones.add(key);
 
-  if (pct === 50 || pct === 75 || pct === 90 || pct === 100 || remaining === 5 || remaining === 1) {
+  if (milestones.includes(pct) || lowRem.includes(remaining)) {
     chrome.notifications.create({
       type: "basic" as chrome.notifications.TemplateType,
       iconUrl: chrome.runtime.getURL("icons/icon48.png"),
       title: "Claude Usage",
       message: pct >= 100
         ? `You've used all ${limit} messages in this window.`
-        : remaining <= 5
+        : lowRem.includes(remaining)
         ? `Only ${remaining} messages left in this window!`
         : `${pct}% of your ${limit}-message window used.`,
     });
@@ -548,12 +560,22 @@ async function bgFetchAndPushUsageToAllTabs(orgId: string): Promise<void> {
     });
     if (!resp.ok) return;
     const data = await resp.json();
+    // Parse and merge into background state, so getAllData() can return fresh values
+    try {
+      const detected = parseUsagePayload(data, orgId);
+      if (detected) {
+        feedDetection(detected);
+      }
+    } catch {}
+
     const tabs = await chrome.tabs.query({ url: "https://claude.ai/*" });
     for (const tab of tabs) {
       if (tab.id) {
         chrome.tabs.sendMessage(tab.id, { type: "BG_USAGE_PUSH", data, orgId }).catch(() => {});
       }
     }
+    // mark when background last performed an active fetch
+    try { await chrome.storage.local.set({ lastFetchedAt: Date.now() }); } catch {}
   } catch {
     // Network error — content script's own polling will recover
   }
@@ -568,7 +590,12 @@ async function bgFetchAndPushUsageToTab(tabId: number, orgId: string): Promise<v
     });
     if (!resp.ok) return;
     const data = await resp.json();
+    try {
+      const detected = parseUsagePayload(data, orgId);
+      if (detected) feedDetection(detected);
+    } catch {}
     chrome.tabs.sendMessage(tabId, { type: "BG_USAGE_PUSH", data, orgId }).catch(() => {});
+    try { await chrome.storage.local.set({ lastFetchedAt: Date.now() }); } catch {}
   } catch {
     // ignore
   }
@@ -799,7 +826,34 @@ async function init(): Promise<void> {
         return true;
 
       case "GET_ALL_DATA":
-        getAllData().then(sendResponse);
+        (async () => {
+          // When a page/tab requests initial data, attempt an active background fetch
+          // so the first numbers the content script sees are fresh.
+          const tabId = (typeof _sender !== 'undefined' && (_sender as any)?.tab) ? ((_sender as any).tab.id as number | undefined) : undefined;
+          // Try to resolve an orgId from known cache, cookies, or storage.
+          let orgId: string | null = isUsableOrgId(_bgOrgId) ? _bgOrgId : null;
+          if (!orgId) {
+            try {
+              const cookie = await chrome.cookies?.get({ name: 'lastActiveOrg', url: 'https://claude.ai' });
+              if (isUsableOrgId(cookie?.value)) orgId = cookie!.value;
+            } catch {}
+          }
+          if (!orgId) {
+            try { orgId = await getStoredOrgId(); } catch {}
+          }
+
+          if (isUsableOrgId(orgId)) {
+            try {
+              if (typeof tabId === 'number' && tabId >= 0) {
+                await bgFetchAndPushUsageToTab(tabId, orgId);
+              } else {
+                await bgFetchAndPushUsageToAllTabs(orgId);
+              }
+            } catch {}
+          }
+
+          getAllData().then(sendResponse);
+        })();
         return true;
 
       case "GET_SETTINGS":
