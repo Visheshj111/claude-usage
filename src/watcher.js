@@ -15,7 +15,7 @@
           if (ct.indexOf('text/event-stream') !== -1) {
             readSSE(resp.clone(), orgId);
           } else if (ct.indexOf('application/json') !== -1) {
-            readJSON(resp.clone());
+            readJSON(resp.clone(), orgId, url);
           }
         }).catch(function(){});
       }
@@ -23,13 +23,26 @@
     return respPromise;
   };
 
+  function isConversationSyncUrl(url) {
+    if (!url) return false;
+    return /\/api\/organizations\/[^/]+\/chat_conversations\/[^/?]+/.test(url) &&
+      (url.indexOf('tree=True') !== -1 || url.indexOf('tree=true') !== -1) &&
+      (url.indexOf('render_all_tools=true') !== -1 || url.indexOf('render_all_tools=True') !== -1);
+  }
+
   function emitCompletionDone(orgId) {
     if (orgId) {
-      // Persist so a newly-loaded content script can recover this event
-      // even if it missed the live CustomEvent dispatch.
       window.__cutLastCompletionOrgId = orgId;
       window.__cutCompletionTimestamp = Date.now();
       window.dispatchEvent(new CustomEvent('cut-completion-done', {detail: orgId}));
+    }
+  }
+
+  function emitConversationSynced(orgId, url) {
+    if (orgId) {
+      window.__cutLastCompletionOrgId = orgId;
+      window.__cutCompletionTimestamp = Date.now();
+      window.dispatchEvent(new CustomEvent('cut-conversation-synced', {detail: {orgId: orgId, url: url}}));
     }
   }
 
@@ -78,10 +91,13 @@
     return pump();
   }
 
-  function readJSON(r) {
+  function readJSON(r, orgId, url) {
     r.json().then(function(obj) {
       if (obj && (obj.message_limit || obj.usage_metadata)) {
         window.dispatchEvent(new CustomEvent('cut-quota', {detail: obj}));
+      }
+      if (isConversationSyncUrl(url)) {
+        emitConversationSynced(orgId, url);
       }
     }).catch(function(){});
   }

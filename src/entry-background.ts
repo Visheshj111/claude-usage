@@ -574,6 +574,33 @@ async function bgFetchAndPushUsageToTab(tabId: number, orgId: string): Promise<v
   }
 }
 
+
+function isConversationSyncUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return /\/api\/organizations\/[^/]+\/chat_conversations\/[^/?]+/.test(parsed.pathname) &&
+      parsed.searchParams.get("tree")?.toLowerCase() === "true" &&
+      parsed.searchParams.get("render_all_tools")?.toLowerCase() === "true";
+  } catch {
+    return false;
+  }
+}
+
+function scheduleBgUsageRefresh(orgId: string, tabId?: number): void {
+  if (!isUsableOrgId(orgId)) return;
+  rememberBgOrgId(orgId);
+  const fetchOnce = () => {
+    if (typeof tabId === "number" && tabId >= 0) {
+      bgFetchAndPushUsageToTab(tabId, orgId);
+    } else {
+      bgFetchAndPushUsageToAllTabs(orgId);
+    }
+  };
+  fetchOnce();
+  setTimeout(fetchOnce, 1500);
+  setTimeout(fetchOnce, 5000);
+  setTimeout(fetchOnce, 12000);
+}
 if (typeof chrome.webRequest !== "undefined" && chrome.webRequest) {
   // ── 1. onBeforeRequest: detect when a message is being sent ──
   // Fires on /completion and /retry_completion POSTs — the user just sent a
@@ -637,6 +664,21 @@ if (typeof chrome.webRequest !== "undefined" && chrome.webRequest) {
     }
   });
 
+
+  // Fetch /usage after Claude reloads the finished conversation JSON.
+  // This happens after the assistant response is persisted, so usage is current
+  // without requiring the user to refresh the page or extension.
+  (chrome.webRequest.onCompleted as any).addListener(
+    (details: any): void => {
+      if (details.tabId < 0 || details.method !== "GET") return;
+      const url: string = details.url || "";
+      if (!isConversationSyncUrl(url)) return;
+      const orgId = url.match(/\/api\/organizations\/([^/]+)/)?.[1];
+      if (!isUsableOrgId(orgId)) return;
+      scheduleBgUsageRefresh(orgId, details.tabId);
+    },
+    { urls: ["https://claude.ai/api/organizations/*/chat_conversations/*"] },
+  );
   // ── 3. onHeadersReceived: extract rate-limit headers (existing) ──
   (chrome.webRequest.onHeadersReceived as any).addListener(
     (details: any): void => {
@@ -887,7 +929,7 @@ async function init(): Promise<void> {
       // Stateless completion trigger: extract orgId from alarm name and
       // re-fetch /usage. Fires even if the SW was suspended at request time.
       const orgId = alarm.name.slice("completion-done-".length);
-      if (orgId) bgFetchAndPushUsageToAllTabs(orgId);
+      if (orgId) scheduleBgUsageRefresh(orgId);
     }
   });
 }

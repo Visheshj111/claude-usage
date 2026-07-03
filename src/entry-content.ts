@@ -1702,18 +1702,25 @@ try {
 // page's main world and dispatches CustomEvent('cut-quota') when it detects
 // Claude quota fields in SSE streams or JSON responses.
 
+function schedulePostCompletionUsageRefresh(orgId: string | null): void {
+  if (orgId) notifyOrgIdFromWatcher(orgId);
+  void refreshUsageAndUI(true, orgId);
+  setTimeout(() => { void refreshUsageAndUI(true, orgId); }, 1500);
+  setTimeout(() => { void refreshUsageAndUI(true, orgId); }, 5000);
+  setTimeout(() => { void refreshUsageAndUI(true, orgId); }, 12000);
+}
 // cut-completion-done: SSE stream fully consumed — Claude has finished responding.
 // e.detail is the orgId extracted from the completion URL by watcher.js.
 // We use it directly to avoid the async resolveOrgId() waterfall that can fail
 // when the background service worker just woke from suspension.
 window.addEventListener("cut-completion-done", ((e: CustomEvent<string>) => {
-  const orgId = e.detail || null;
-  if (orgId) notifyOrgIdFromWatcher(orgId);
-  void refreshUsageAndUI(true, orgId);
-  setTimeout(() => { void refreshUsageAndUI(true, orgId); }, 2000);
-  setTimeout(() => { void refreshUsageAndUI(true, orgId); }, 8000);
+  schedulePostCompletionUsageRefresh(e.detail || null);
 }) as EventListener);
 
+
+window.addEventListener("cut-conversation-synced", ((e: CustomEvent<{ orgId?: string }>) => {
+  schedulePostCompletionUsageRefresh(e.detail?.orgId || null);
+}) as EventListener);
 window.addEventListener("cut-quota", ((e: CustomEvent) => {
   const data = e.detail;
   if (!data || typeof data !== "object") return;
