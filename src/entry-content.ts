@@ -19,9 +19,6 @@ import { runDetection, handleNetworkQuota, startPeriodicScan, estimateUsage } fr
 import { interceptFetch, interceptXHR, getTrackedOrgId, setOnOrgIdDetected, notifyOrgIdFromWatcher } from "./backend/network-monitor";
 import type { DetectedUsage, PlanTier } from "./backend/types";
 import { refineLocal, refineWithAPI, RefinementResult } from './refiner';
-import { POLLING, DEFAULT_PEAK_HOURS } from './config';
-import { initRemoteConfig, getRemoteConfig } from './remote-config';
-import { parseUsagePayload } from './backend/usage-parser';
 
 // ── Old tracking state ──
 const TRACK = {
@@ -294,7 +291,107 @@ async function refreshUsageAndUI(force = false, explicitOrgId?: string | null): 
   return fetched;
 }
 
-// moved parsing utilities to shared module: src/backend/usage-parser.ts
+function parseUsagePayload(data: Record<string, unknown>, orgId?: string): DetectedUsage | null {
+  if (!data || !data.five_hour || typeof data.five_hour !== "object") return null;
+
+  const fh = data.five_hour as Record<string, unknown>;
+  const detected: DetectedUsage = {
+    source: "network",
+    confidence: 0.95,
+    hasAccurateData: true,
+  };
+  if (orgId) detected.orgId = orgId;
+
+  parseUsageWindow(fh, detected);
+
+  if (data.maxed && typeof data.maxed === "object") {
+    const mx = data.maxed as Record<string, unknown>;
+    detected.limitType = "hard";
+    const hardReset = timestampFromValue(mx.resets_at ?? mx.reset_at ?? mx.window_reset_at);
+    if (hardReset) {
+      detected.hardLimitResetAt = hardReset;
+      detected.resetTimestamp = hardReset;
+    }
+    if (typeof mx.messages_used === "number") detected.sessionMessagesUsed = mx.messages_used;
+    detected.isRateLimited = true;
+  } else {
+    detected.limitType = "soft";
+  }
+
+  if (data.seven_day && typeof data.seven_day === "object") {
+    const w = parseWeeklyField(data.seven_day as Record<string, unknown>);
+    if (w) detected.weeklyUsage = w;
+  }
+  if (data.seven_day_sonnet && typeof data.seven_day_sonnet === "object") {
+    const w = parseWeeklyField(data.seven_day_sonnet as Record<string, unknown>);
+    if (w) detected.weeklySonnetUsage = w;
+  }
+  if (data.seven_day_opus && typeof data.seven_day_opus === "object") {
+    const w = parseWeeklyField(data.seven_day_opus as Record<string, unknown>);
+    if (w) detected.weeklyOpusUsage = w;
+  }
+
+  return detected;
+}
+
+function parseUsageWindow(windowData: Record<string, unknown>, detected: DetectedUsage): void {
+  const utilization = numberFromValue(windowData.utilization);
+  const maxMessages = numberFromValue(windowData.max_messages ?? windowData.message_limit ?? windowData.limit);
+  const remainingMessages = numberFromValue(windowData.remaining_messages ?? windowData.messages_remaining ?? windowData.remaining);
+  const messagesUsed = numberFromValue(windowData.messages_used ?? windowData.used_messages ?? windowData.used);
+  const resetTimestamp = timestampFromValue(windowData.resets_at ?? windowData.reset_at ?? windowData.window_reset_at);
+
+  if (utilization !== null) detected.usagePercent = utilization;
+  if (maxMessages !== null && maxMessages > 0) detected.sessionLimit = maxMessages;
+
+  if (remainingMessages !== null) {
+    detected.remainingMessages = Math.max(0, Math.round(remainingMessages));
+  } else if (maxMessages !== null && utilization !== null) {
+    const used = Math.round((utilization / 100) * maxMessages);
+    detected.remainingMessages = Math.max(0, maxMessages - used);
+  }
+
+  if (messagesUsed !== null) {
+    detected.sessionMessagesUsed = Math.max(0, Math.round(messagesUsed));
+  } else if (maxMessages !== null && detected.remainingMessages !== undefined) {
+    detected.sessionMessagesUsed = Math.max(0, maxMessages - detected.remainingMessages);
+  } else if (maxMessages !== null && utilization !== null) {
+    detected.sessionMessagesUsed = Math.max(0, Math.round((utilization / 100) * maxMessages));
+  }
+
+  if (resetTimestamp) detected.resetTimestamp = resetTimestamp;
+  if (utilization !== null && utilization >= 100) detected.isRateLimited = true;
+}
+
+function numberFromValue(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function timestampFromValue(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value > 1e12 ? value : value * 1000;
+  if (typeof value === "string" && value.trim()) {
+    const ts = new Date(value).getTime();
+    return Number.isFinite(ts) ? ts : null;
+  }
+  return null;
+}
+
+function parseWeeklyField(obj: Record<string, unknown>): import("./backend/types").WeeklyUsage | null {
+  if (typeof obj.utilization !== "number" && typeof obj.max_messages !== "number") return null;
+  return {
+    usagePercent: typeof obj.utilization === "number" ? obj.utilization : null,
+    messagesUsed: typeof obj.utilization === "number" && typeof obj.max_messages === "number"
+      ? Math.round((obj.utilization / 100) * obj.max_messages)
+      : null,
+    maxMessages: typeof obj.max_messages === "number" ? obj.max_messages : null,
+    resetsAt: timestampFromValue(obj.resets_at),
+  };
+}
 
 /**
  * Handle usage data pushed proactively from the background service worker.
@@ -308,6 +405,8 @@ function handleBgUsagePush(data: Record<string, unknown>, orgId: string): void {
   rememberContentOrgId(orgId);
   feedDetection(detected);
   fetchPlanInfo(orgId);
+  // Immediately refresh the in-page widget so it doesn't wait for the 1s tick
+  updateUI();
 }
 
 // Peak hours per Anthropic's March 2026 capacity announcement: weekdays
@@ -315,9 +414,8 @@ function handleBgUsagePush(data: Record<string, unknown>, orgId: string): void {
 // or remove this policy at any time with no API signal. Treat this as a
 // best-effort estimate, not authoritative.
 function checkPeakHours(): void {
-  const remote = getRemoteConfig();
-  const PEAK_START_HOUR_ET = remote?.peakHours?.startHourET ?? DEFAULT_PEAK_HOURS.startHourET;
-  const PEAK_END_HOUR_ET = remote?.peakHours?.endHourET ?? DEFAULT_PEAK_HOURS.endHourET;
+  const PEAK_START_HOUR_ET = 8;
+  const PEAK_END_HOUR_ET = 14;
   const etFormatter = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",
     hour: "numeric",
@@ -384,10 +482,7 @@ async function init(): Promise<void> {
 
   // 4b. Peak hours check every 60s
   checkPeakHours();
-  // initialize remote config (may override peak hours)
-  void initRemoteConfig().catch(() => {});
-  checkPeakHours();
-  const peakInterval = setInterval(checkPeakHours, POLLING.peakCheck);
+  const peakInterval = setInterval(checkPeakHours, 60000);
   cleanupFns.push(() => clearInterval(peakInterval));
 
   // 5. Countdown ticker (new)
@@ -437,6 +532,11 @@ async function init(): Promise<void> {
   // Fire immediately on init
   void refreshUsageAndUI(true);
 
+  // 10b. Notify background that the content script is ready so it can immediately
+  // push fresh /usage data via BG_USAGE_PUSH — this is exactly what the extension
+  // reload trigger (tabs.onUpdated) does, replicating that reliably on every page load.
+  void sendRuntimeMessage({ type: "CONTENT_SCRIPT_READY" });
+
   // Also fetch plan info (tier / capabilities)
   const orgIdForPlan = resolveOrgId();
   orgIdForPlan.then((oid) => { if (oid) fetchPlanInfo(oid); });
@@ -446,11 +546,11 @@ async function init(): Promise<void> {
   cleanupFns.push(() => clearInterval(usageApiInterval));
   
   // Fast retry: poll every 3s for the first 30s to catch orgId as soon as it's available
-  const fastRetryInterval = setInterval(() => { 
-    void refreshUsageAndUI(false); 
-  }, POLLING.usageFastRetry);
-  const fastRetryTimer = setTimeout(() => { 
-    clearInterval(fastRetryInterval); 
+  const fastRetryInterval = setInterval(() => {
+    void refreshUsageAndUI(false);
+  }, 3000);
+  const fastRetryTimer = setTimeout(() => {
+    clearInterval(fastRetryInterval);
     // Log if we still have no orgId after the fast-retry window — the
     // popup will show "not detected" until the user opens a conversation.
     resolveOrgId().then((id) => {
@@ -591,7 +691,7 @@ function startActivityMonitor(): void {
       TRACK.sessionStarted = false;
       clearInterval(TRACK.sessionCheckTimer!);
     }
-  }, POLLING.usageFastRetryWindow);
+  }, 60000);
 }
 
 // ── Old: Message Scanning (Delta-based) ──
@@ -1200,12 +1300,6 @@ async function updateUI(): Promise<void> {
   try {
     const result = await sendRuntimeMessage<Record<string, unknown>>({ type: "GET_ALL_DATA" });
     if (!result) return;
-    const lastFetchedAt = typeof result.lastFetchedAt === 'number' ? result.lastFetchedAt as number : null;
-    if (!lastFetchedAt || (Date.now() - lastFetchedAt) > 60_000) {
-      // Data is stale; ask background to force-fetch fresh usage and skip render.
-      void sendRuntimeMessage({ type: 'FORCE_FETCH_USAGE' });
-      return;
-    }
     renderUI(result);
   } catch {
     // ignore

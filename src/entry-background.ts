@@ -959,6 +959,36 @@ async function init(): Promise<void> {
         }
         break;
       }
+
+      case "CONTENT_SCRIPT_READY": {
+        // Content script just initialised (page load or extension reload).
+        // Replicate what tabs.onUpdated does: resolve the org and push fresh
+        // /usage data back to that tab immediately so the first numbers shown
+        // are accurate — without the user having to reload the extension.
+        const readyTabId = (_sender as any)?.tab?.id as number | undefined;
+        (async () => {
+          let orgId: string | null = isUsableOrgId(_bgOrgId) ? _bgOrgId : null;
+          if (!orgId) {
+            try {
+              const cookie = await chrome.cookies?.get({ name: "lastActiveOrg", url: "https://claude.ai" });
+              if (isUsableOrgId(cookie?.value)) orgId = cookie!.value;
+            } catch {}
+          }
+          if (!orgId) {
+            try { orgId = await getStoredOrgId(); } catch {}
+          }
+          if (isUsableOrgId(orgId)) {
+            rememberBgOrgId(orgId);
+            if (typeof readyTabId === "number" && readyTabId >= 0) {
+              await bgFetchAndPushUsageToTab(readyTabId, orgId);
+            } else {
+              await bgFetchAndPushUsageToAllTabs(orgId);
+            }
+          }
+        })().catch(() => {});
+        sendResponse({ ok: true });
+        break;
+      }
     }
   });
 
