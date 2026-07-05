@@ -20,6 +20,17 @@ import { interceptFetch, interceptXHR, getTrackedOrgId, setOnOrgIdDetected, noti
 import type { DetectedUsage, PlanTier } from "./backend/types";
 import { refineLocal, refineWithAPI, RefinementResult } from './refiner';
 
+// ── Per-response token stats (from SSE message_start) ──
+interface MessageStats {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  totalTokens: number;
+  timestamp: number;
+}
+let lastMessageStats: MessageStats | null = null;
+
 // ── Old tracking state ──
 const TRACK = {
   conversationId: null as string | null,
@@ -810,7 +821,7 @@ function injectUI(): void {
       <div id="cut-badge">0%</div>
       <div id="cut-panel">
         <div class="cut-panel-header">
-          <span class="cut-header-label">Claude usage</span>
+          <span class="cut-header-label">Claude Usage</span>
           <div class="cut-panel-actions">
             <span class="cut-badge-sm" id="cut-badge-sm">0%</span>
             <span id="cut-force-reload" class="cut-header-btn" title="Reload usage">↻</span>
@@ -824,10 +835,9 @@ function injectUI(): void {
         <div class="cut-peak-banner" id="cut-peak-row">
           <div class="cut-peak-main">
             <span class="cut-peak-dot" id="cut-peak-dot"></span>
-            <span class="cut-peak-message" id="cut-peak-message">Checking peak hours...</span>
+            <span class="cut-peak-status" id="cut-peak-message">Checking...</span>
             <span class="cut-peak-countdown" id="cut-peak-timer">--:--:--</span>
           </div>
-          <div class="cut-peak-note">Applies to Claude.ai chat. Claude Code on Pro/Max plans is no longer throttled during peak hours (since May 2026).</div>
         </div>
 
         <div class="cut-section w-prog-section">
@@ -864,6 +874,14 @@ function injectUI(): void {
             <span class="cut-stat-value cut-stat-remain" id="cut-remain">0</span>
             <span class="cut-stat-label">Remain</span>
           </div>
+        </div>
+
+        <div class="cut-ctx-row" id="cut-ctx-row" style="display:none">
+          <span class="cut-ctx-item"><span class="cut-ctx-label">Length</span><span class="cut-ctx-value" id="cut-ctx-length">—</span></span>
+          <span class="cut-ctx-sep">·</span>
+          <span class="cut-ctx-item"><span class="cut-ctx-label">Cost</span><span class="cut-ctx-value" id="cut-ctx-cost">—</span></span>
+          <span class="cut-ctx-sep">·</span>
+          <span class="cut-ctx-item"><span class="cut-ctx-label">Cached</span><span class="cut-ctx-value" id="cut-ctx-cached">—</span></span>
         </div>
 
         <div class="cut-footer-row w-foot">
@@ -1410,18 +1428,24 @@ function renderUI(data: Record<string, unknown>): void {
   const settings = (data.settings || {}) as Record<string, unknown>;
   const sessionPct = data.sessionPct as number | null;
   const sessionLimit = data.sessionLimit as number | null;
+  const sessionMessagesUsed = data.sessionMessagesUsed as number | null;
+  const remainingMessages = data.remaining ? (data.remaining as Record<string, number>).messages : null;
   const isPeakHours = data.isPeakHours as boolean | undefined;
   const peakHoursTransitionAt = data.peakHoursTransitionAt as number | null | undefined;
 
   detectTheme(settings.themeMode as string | undefined);
 
-  const msgsUsed = (daily.messagesSent || 0) + (daily.messagesReceived || 0);
+  // Use backend accurate values when available (decimal-precision remaining from /usage API)
   const msgsTotal = sessionLimit || remaining.messagesTotal || 45;
+  const msgsUsedFromDaily = (daily.messagesSent || 0) + (daily.messagesReceived || 0);
+  const msgsUsed = sessionMessagesUsed ?? msgsUsedFromDaily;
   const msgPct = sessionPct != null ? sessionPct : Math.min(100, Math.round((msgsUsed / msgsTotal) * 100));
   const tokensUsed = (daily.tokensSent || 0) + (daily.tokensReceived || 0);
   const tokensTotal = remaining.tokensTotal || 90000;
   const tokenPct = Math.min(100, Math.round((tokensUsed / tokensTotal) * 100));
-  const msgsRemaining = Math.max(0, msgsTotal - msgsUsed);
+  // Use precise remaining from backend API if available (can be decimal like 26.1)
+  const msgsRemainingRaw = remainingMessages ?? Math.max(0, msgsTotal - msgsUsed);
+  const msgsRemaining = Math.max(0, msgsRemainingRaw);
 
   const badge = get("cut-badge");
   if (badge) {
@@ -1453,6 +1477,7 @@ function renderUI(data: Record<string, unknown>): void {
     resetEl!.textContent = "--:--:--";
   }
 
+  // Peak hours row — compact, no description text
   const peakRow = get("cut-peak-row");
   const peakDot = get("cut-peak-dot");
   const peakMessage = get("cut-peak-message");
@@ -1463,15 +1488,15 @@ function renderUI(data: Record<string, unknown>): void {
     peakRow.className = "cut-peak-banner " + (isPeak ? "peak-on" : "peak-off");
     peakDot.className = "cut-peak-dot " + (isPeak ? "peak-on" : "peak-off");
     if (isPeak) {
-      peakMessage.textContent = "Peak hours - sessions drain 3-5x faster.";
+      peakMessage.textContent = "Peak";
       peakTimer.textContent = peakHoursTransitionAt
         ? "Off-peak in " + formatDuration(peakHoursTransitionAt - Date.now())
-        : "Off-peak time unknown";
+        : "";
     } else {
-      peakMessage.textContent = "Off-peak - full speed.";
+      peakMessage.textContent = "Off-peak";
       peakTimer.textContent = peakHoursTransitionAt
-        ? "Peak hours in " + formatDuration(peakHoursTransitionAt - Date.now())
-        : "Peak hours time unknown";
+        ? "Peak in " + formatDuration(peakHoursTransitionAt - Date.now())
+        : "";
     }
   }
 
@@ -1481,10 +1506,32 @@ function renderUI(data: Record<string, unknown>): void {
   if (recvEl) recvEl.textContent = formatNum(daily.messagesReceived);
   const remainEl = get("cut-remain");
   if (remainEl) {
-    remainEl.textContent = formatNum(msgsRemaining);
+    // Show decimal precision (e.g. 26.1) when we have accurate data
+    remainEl.textContent = formatMsgCount(msgsRemaining);
     remainEl.className = "cut-stat-value cut-stat-remain";
     if (msgsRemaining < 5) remainEl.classList.add("danger");
     else if (msgsRemaining < 10) remainEl.classList.add("warn");
+  }
+
+  // Context stats row (token length, cost, cached) from last SSE response
+  const ctxRow = get("cut-ctx-row");
+  if (ctxRow && lastMessageStats) {
+    const s = lastMessageStats;
+    const totalToks = s.totalTokens;
+    const cachedToks = s.cacheReadTokens;
+    // Approximate credit cost: ~1 credit per 1000 tokens (rough heuristic)
+    const creditCost = Math.round(totalToks / 1000 * 100) / 100;
+    const cachedPct = totalToks > 0 ? Math.round((cachedToks / totalToks) * 100) : 0;
+
+    ctxRow.style.display = "";
+    const lenEl = get("cut-ctx-length");
+    const costEl = get("cut-ctx-cost");
+    const cachedEl = get("cut-ctx-cached");
+    if (lenEl) lenEl.textContent = formatNum(totalToks) + " tok";
+    if (costEl) costEl.textContent = formatNum(Math.round(totalToks * 0.003)) + " cr";
+    if (cachedEl) cachedEl.textContent = cachedPct > 0 ? cachedPct + "% cached" : "0%";
+  } else if (ctxRow && !lastMessageStats) {
+    ctxRow.style.display = "none";
   }
 }
 
@@ -1513,10 +1560,19 @@ function formatDuration(ms: number): string {
 }
 
 function formatNum(n: number | null | undefined): string {
-  if (!n) return "0";
+  if (n == null || isNaN(n as number)) return "0";
   if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
-  if (n >= 1000) return (n / 1000).toFixed(1) + "K";
-  return String(n);
+  if (n >= 1000) return Math.round(n).toLocaleString();
+  return String(Math.round(n));
+}
+
+/** Format message count with one decimal place when it's not a whole number */
+function formatMsgCount(n: number): string {
+  if (n <= 0) return "0";
+  if (n >= 1000) return Math.round(n).toLocaleString();
+  // Show decimal if the value isn't a whole number
+  const rounded = Math.round(n * 10) / 10;
+  return rounded % 1 === 0 ? String(rounded) : rounded.toFixed(1);
 }
 
 async function fetchConversationFromAPI(
@@ -1735,6 +1791,29 @@ window.addEventListener("cut-quota", ((e: CustomEvent) => {
   if (quota) {
     handleNetworkQuota(quota);
     void refreshUsageAndUI(false);
+  }
+}) as EventListener);
+
+// cut-message-stats: emitted by watcher.js from SSE message_start events.
+// Contains input/output/cache token counts for the last Claude response.
+window.addEventListener("cut-message-stats", ((e: CustomEvent<MessageStats>) => {
+  if (e.detail && typeof e.detail.totalTokens === "number") {
+    lastMessageStats = e.detail;
+    // Immediately update the context row without waiting for the 1s tick
+    const ctxRow = document.getElementById("cut-ctx-row");
+    if (ctxRow) {
+      const s = lastMessageStats;
+      const totalToks = s.totalTokens;
+      const cachedToks = s.cacheReadTokens;
+      const cachedPct = totalToks > 0 ? Math.round((cachedToks / totalToks) * 100) : 0;
+      ctxRow.style.display = "";
+      const lenEl = document.getElementById("cut-ctx-length");
+      const costEl = document.getElementById("cut-ctx-cost");
+      const cachedEl = document.getElementById("cut-ctx-cached");
+      if (lenEl) lenEl.textContent = formatNum(totalToks) + " tok";
+      if (costEl) costEl.textContent = formatNum(Math.round(totalToks * 0.003)) + " cr";
+      if (cachedEl) cachedEl.textContent = cachedPct > 0 ? cachedPct + "% cached" : "0%";
+    }
   }
 }) as EventListener);
 

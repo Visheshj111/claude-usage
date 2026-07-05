@@ -15,10 +15,10 @@
   --cut-warn:    #BA7517;
   --cut-danger:  #E24B4A;
 
-  --cut-radius-card: 14px;
-  --cut-radius-sm: 4px;
+  --cut-radius-card: 16px;
+  --cut-radius-sm: 5px;
   --cut-radius-pill: 99px;
-  --cut-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  --cut-shadow: 0 4px 20px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06);
 }
 
 .cut-dark {
@@ -33,7 +33,7 @@
   --cut-safe:    #2DB88A;
   --cut-warn:    #D4892A;
   --cut-danger:  #E8605F;
-  --cut-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  --cut-shadow: 0 4px 20px rgba(0,0,0,0.35), 0 1px 4px rgba(0,0,0,0.25);
 }
 
 /* ── Reset ── */
@@ -52,9 +52,9 @@
   right: 20px;
   z-index: 999999;
   font-family: var(--cut-font);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--cut-text);
-  line-height: 1.3;
+  line-height: 1.4;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -67,24 +67,28 @@
 
 /* ── Collapsed Badge ── */
 #cut-badge {
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--cut-bg2);
-  border: 0.5px solid var(--cut-border);
+  border: 1px solid var(--cut-border);
   color: var(--cut-text);
   font-family: var(--cut-mono);
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
   cursor: pointer;
-  transition: transform 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
   user-select: none;
+  box-shadow: var(--cut-shadow);
 }
 
-#cut-badge:hover { transform: scale(1.05); }
+#cut-badge:hover {
+  transform: scale(1.06);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.14);
+}
 
 #cut-badge.warn {
   background: #FAEEDA;
@@ -100,13 +104,14 @@
 
 /* ── Expanded Panel ── */
 #cut-panel {
-  width: 300px;
+  width: 320px;
   background: var(--cut-bg);
-  border: 0.5px solid var(--cut-border2);
+  border: 1px solid var(--cut-border2);
   border-radius: var(--cut-radius-card);
   overflow: hidden;
   box-shadow: var(--cut-shadow);
   display: none;
+  margin-bottom: 8px;
 }
 
 /* ── Panel Header ── */
@@ -114,14 +119,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px 8px;
-  border-bottom: 0.5px solid var(--cut-border);
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--cut-border);
 }
 
 .cut-header-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--cut-text2);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--cut-text);
+  letter-spacing: -0.01em;
 }
 
 .cut-panel-actions {
@@ -132,18 +138,18 @@
 
 /* Small badge inside panel header */
 .cut-badge-sm {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--cut-bg2);
-  border: 0.5px solid var(--cut-border);
+  border: 1px solid var(--cut-border);
   color: var(--cut-text);
   font-family: var(--cut-mono);
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .cut-badge-sm.warn {
@@ -163,31 +169,31 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  font-size: 13px;
+  width: 26px;
+  height: 26px;
+  font-size: 14px;
   color: var(--cut-text3);
   cursor: pointer;
   border-radius: var(--cut-radius-sm);
   user-select: none;
-  transition: background 0.1s ease;
+  transition: background 0.1s ease, color 0.1s ease;
 }
 
 .cut-header-btn:hover {
   background: var(--cut-bg2);
-  color: var(--cut-text2);
+  color: var(--cut-text);
 }
 
-/* ── Progress Section ── */
+/* ── Peak Banner (compact, no description) ── */
 .cut-peak-banner {
-  padding: 8px 12px 9px;
-  border-bottom: 0.5px solid var(--cut-border);
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--cut-border);
   background: var(--cut-bg2);
 }
 
 .cut-peak-banner.peak-on {
-  background: #FAEEDA;
-  border-bottom-color: #EF9F27;
+  background: rgba(239, 159, 39, 0.10);
+  border-bottom-color: rgba(239, 159, 39, 0.3);
 }
 
 .cut-peak-banner.peak-off {
@@ -197,14 +203,18 @@
 .cut-peak-main {
   display: flex;
   align-items: center;
-  gap: 5px;
-  color: var(--cut-text2);
-  font-size: 11px;
+  gap: 6px;
+  color: var(--cut-text3);
+  font-size: 12px;
   line-height: 1.3;
 }
 
 .cut-peak-banner.peak-on .cut-peak-main {
-  color: #633806;
+  color: #7A4A0A;
+}
+
+.cut-dark .cut-peak-banner.peak-on .cut-peak-main {
+  color: #D4892A;
 }
 
 .cut-peak-dot {
@@ -217,16 +227,18 @@
 
 .cut-peak-dot.peak-on {
   background: var(--cut-warn);
+  box-shadow: 0 0 0 2px rgba(186,117,23,0.2);
 }
 
 .cut-peak-dot.peak-off {
-  background: var(--cut-text3);
+  background: var(--cut-safe);
 }
 
-.cut-peak-message {
+.cut-peak-status {
   flex: 1;
   min-width: 0;
-  font-weight: 500;
+  font-weight: 600;
+  font-size: 12px;
 }
 
 .cut-peak-countdown {
@@ -234,45 +246,35 @@
   font-family: var(--cut-mono);
   font-size: 11px;
   font-weight: 600;
-  color: var(--cut-text2);
+  color: var(--cut-text3);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
 .cut-peak-banner.peak-on .cut-peak-countdown {
-  color: #633806;
-}
-
-.cut-peak-note {
-  margin-top: 3px;
-  padding-left: 10px;
-  color: var(--cut-text3);
-  font-size: 8px;
-  line-height: 1.35;
-}
-
-.cut-peak-banner.peak-on .cut-peak-note {
   color: #7A4A0A;
 }
 
+/* ── Progress Section ── */
 .cut-section,
 .w-prog-section {
-  padding: 8px 10px;
+  padding: 12px 14px;
 }
 
 .cut-progress-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 5px;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
 .cut-progress-row:last-child { margin-bottom: 0; }
 
 .cut-progress-label {
-  font-size: 10px;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--cut-text3);
-  min-width: 48px;
+  min-width: 50px;
   flex-shrink: 0;
 }
 
@@ -280,12 +282,12 @@
   flex: 1;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .cut-progress-bar {
   flex: 1;
-  height: 3px;
+  height: 5px;
   background: var(--cut-bg2);
   border-radius: var(--cut-radius-pill);
   overflow: hidden;
@@ -302,12 +304,13 @@
 .cut-progress-fill.danger { background: var(--cut-danger); }
 
 .cut-progress-nums {
-  font-size: 10px;
+  font-size: 11px;
   font-family: var(--cut-mono);
-  color: var(--cut-text3);
-  min-width: 52px;
+  color: var(--cut-text2);
+  min-width: 60px;
   text-align: right;
   font-variant-numeric: tabular-nums;
+  font-weight: 500;
 }
 
 /* ── Stat Grid ── */
@@ -315,24 +318,26 @@
 .w-stat-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  border-top: 0.5px solid var(--cut-border);
+  border-top: 1px solid var(--cut-border);
+  border-bottom: 1px solid var(--cut-border);
 }
 
 .cut-stat-cell {
   text-align: center;
-  padding: 6px 4px;
-  border-right: 0.5px solid var(--cut-border);
+  padding: 10px 4px;
+  border-right: 1px solid var(--cut-border);
 }
 
 .cut-stat-cell:last-child { border-right: none; }
 
 .cut-stat-value {
   display: block;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 18px;
+  font-weight: 600;
   font-family: var(--cut-mono);
   color: var(--cut-text);
   font-variant-numeric: tabular-nums;
+  line-height: 1.1;
 }
 
 .cut-stat-remain { color: var(--cut-safe); }
@@ -341,11 +346,52 @@
 
 .cut-stat-label {
   display: block;
-  font-size: 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--cut-text3);
+  margin-top: 3px;
+  font-weight: 500;
+}
+
+/* ── Context Stats Row (Length · Cost · Cached) ── */
+.cut-ctx-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--cut-border);
+  background: var(--cut-bg2);
+  flex-wrap: wrap;
+}
+
+.cut-ctx-item {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.cut-ctx-label {
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--cut-text3);
-  margin-top: 1px;
+  font-weight: 500;
+}
+
+.cut-ctx-value {
+  font-size: 12px;
+  font-family: var(--cut-mono);
+  font-weight: 600;
+  color: var(--cut-text2);
+  font-variant-numeric: tabular-nums;
+}
+
+.cut-ctx-sep {
+  font-size: 12px;
+  color: var(--cut-border2);
+  font-weight: 300;
 }
 
 /* ── Footer Row ── */
@@ -354,43 +400,45 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px;
-  border-top: 0.5px solid var(--cut-border);
+  padding: 9px 14px;
+  border-top: 1px solid var(--cut-border);
 }
 
 .cut-reset-label {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--cut-text3);
 }
 
 .cut-reset-time {
   font-family: var(--cut-mono);
   color: var(--cut-accent);
-  font-weight: 500;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
+  font-size: 13px;
 }
 
 .cut-details-link {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--cut-accent);
   cursor: pointer;
+  font-weight: 500;
 }
 
 .cut-details-link:hover { text-decoration: underline; }
 
 /* ── Rate Limit Row ── */
 .cut-ratelimit-row {
-  padding: 6px 10px;
-  font-size: 10px;
+  padding: 8px 14px;
+  font-size: 12px;
   color: var(--cut-warn);
-  background: #FAEEDA;
-  border-top: 0.5px solid var(--cut-border);
+  background: rgba(186,117,23,0.08);
+  border-top: 1px solid var(--cut-border);
 }
 
 .cut-ratelimit-row strong {
   font-family: var(--cut-mono);
   color: var(--cut-warn);
-  font-weight: 500;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
