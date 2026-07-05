@@ -219,7 +219,8 @@ async function render(): Promise<void> {
   if (metricUsed) metricUsed.textContent = formatNum(msgsUsed);
   const remainEl = document.getElementById('metric-remain');
   if (remainEl) {
-    remainEl.textContent = formatNum(msgsRemaining);
+    // Show decimal precision (e.g. 26.1) when we have accurate data
+    remainEl.textContent = formatMsgCount(msgsRemaining);
     remainEl.className = 'metric-val metric-remain';
     if (msgsRemaining < 5) remainEl.classList.add('danger');
     else if (msgsRemaining < 10) remainEl.classList.add('warn');
@@ -348,10 +349,19 @@ function formatDuration(ms: number): string {
 }
 
 function formatNum(n: number | null | undefined): string {
-  if (!n && n !== 0) return '0';
+  if (n == null || isNaN(n as number)) return '0';
   if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
-  return String(n);
+  if (n >= 1000) return Math.round(n).toLocaleString();
+  return String(Math.round(n));
+}
+
+/** Show one decimal place when value isn't a whole number (e.g. 26.1 remaining) */
+function formatMsgCount(n: number | null | undefined): string {
+  if (n == null || isNaN(n as number)) return '0';
+  if (n <= 0) return '0';
+  if (n >= 1000) return Math.round(n).toLocaleString();
+  const rounded = Math.round(n * 10) / 10;
+  return rounded % 1 === 0 ? String(rounded) : rounded.toFixed(1);
 }
 
 function renderWeekly(

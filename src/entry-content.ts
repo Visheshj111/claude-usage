@@ -356,18 +356,20 @@ function parseUsageWindow(windowData: Record<string, unknown>, detected: Detecte
   if (maxMessages !== null && maxMessages > 0) detected.sessionLimit = maxMessages;
 
   if (remainingMessages !== null) {
-    detected.remainingMessages = Math.max(0, Math.round(remainingMessages));
+    // Keep decimal precision (e.g. 26.1 remaining) — formatMsgCount handles display
+    detected.remainingMessages = Math.max(0, remainingMessages);
   } else if (maxMessages !== null && utilization !== null) {
-    const used = Math.round((utilization / 100) * maxMessages);
-    detected.remainingMessages = Math.max(0, maxMessages - used);
+    // Compute remaining from utilization with 1-decimal precision
+    const used = (utilization / 100) * maxMessages;
+    detected.remainingMessages = Math.max(0, Math.round((maxMessages - used) * 10) / 10);
   }
 
   if (messagesUsed !== null) {
-    detected.sessionMessagesUsed = Math.max(0, Math.round(messagesUsed));
+    detected.sessionMessagesUsed = Math.max(0, messagesUsed);
   } else if (maxMessages !== null && detected.remainingMessages !== undefined) {
     detected.sessionMessagesUsed = Math.max(0, maxMessages - detected.remainingMessages);
   } else if (maxMessages !== null && utilization !== null) {
-    detected.sessionMessagesUsed = Math.max(0, Math.round((utilization / 100) * maxMessages));
+    detected.sessionMessagesUsed = Math.max(0, (utilization / 100) * maxMessages);
   }
 
   if (resetTimestamp) detected.resetTimestamp = resetTimestamp;
@@ -1169,8 +1171,15 @@ function attachUIEvents(): void {
     if (badge) badge.style.display = "none";
   });
   get("cut-open-popup")?.addEventListener("click", () => {
-    const dashboardUrl = getRuntimeUrl("dist/dashboard/dashboard.html");
-    if (dashboardUrl) window.open(dashboardUrl, "_blank");
+    try {
+      // Open the options page (popup-style full view) — avoids ERR_BLOCKED_BY_CLIENT
+      // that ad blockers cause when opening chrome-extension:// URLs via window.open()
+      if (chrome.runtime?.id) chrome.runtime.openOptionsPage();
+    } catch {
+      // Extension context invalidated — fallback to opening popup URL directly
+      const optUrl = getRuntimeUrl("dist/options/options.html");
+      if (optUrl) window.open(optUrl, "_blank");
+    }
   });
   get("cut-open-settings")?.addEventListener("click", () => {
     try {

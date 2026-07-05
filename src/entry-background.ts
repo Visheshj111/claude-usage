@@ -899,10 +899,40 @@ async function init(): Promise<void> {
         sendResponse(getState());
         break;
 
-      case "STATE_UPDATE":
-        broadcastState(message.state);
+      case "STATE_UPDATE": {
+        // Sync content-script state into the background's own state manager
+        // so getAllData() / GET_ALL_DATA returns current values to the popup.
+        const incomingState = message.state as UsageState | undefined;
+        if (incomingState && typeof incomingState === 'object') {
+          // Only sync fields that represent real network detections (source = network)
+          // to avoid overwriting background's own high-confidence data with stale estimates.
+          const det: import('./backend/types').DetectedUsage = {
+            source: incomingState.source || 'network',
+            confidence: incomingState.confidence ?? 0.9,
+          };
+          if (incomingState.usagePercent != null)       det.usagePercent = incomingState.usagePercent;
+          if (incomingState.remainingMessages != null)  det.remainingMessages = incomingState.remainingMessages;
+          if (incomingState.sessionLimit != null)       det.sessionLimit = incomingState.sessionLimit;
+          if (incomingState.sessionMessagesUsed != null) det.sessionMessagesUsed = incomingState.sessionMessagesUsed;
+          if (incomingState.resetTimestamp != null)     det.resetTimestamp = incomingState.resetTimestamp;
+          if (incomingState.isRateLimited != null)      det.isRateLimited = incomingState.isRateLimited;
+          if (incomingState.limitType)                  det.limitType = incomingState.limitType;
+          if (incomingState.hardLimitResetAt != null)   det.hardLimitResetAt = incomingState.hardLimitResetAt;
+          if (incomingState.orgId)                      det.orgId = incomingState.orgId;
+          if (incomingState.hasAccurateData != null)    det.hasAccurateData = incomingState.hasAccurateData;
+          if (incomingState.planTier)                   det.planTier = incomingState.planTier;
+          if (incomingState.weeklyUsage)                det.weeklyUsage = incomingState.weeklyUsage;
+          if (incomingState.weeklySonnetUsage)          det.weeklySonnetUsage = incomingState.weeklySonnetUsage;
+          if (incomingState.weeklyOpusUsage)            det.weeklyOpusUsage = incomingState.weeklyOpusUsage;
+          if (incomingState.isPeakHours != null)        det.isPeakHours = incomingState.isPeakHours;
+          if (incomingState.peakHoursTransitionAt != null) det.peakHoursTransitionAt = incomingState.peakHoursTransitionAt;
+          if (incomingState.orgId && isUsableOrgId(incomingState.orgId)) rememberBgOrgId(incomingState.orgId);
+          feedDetection(det);
+        }
+        broadcastState(getState());
         sendResponse({ ok: true });
         break;
+      }
 
       case "RESET_STATE":
         resetState().then(() => sendResponse({ success: true }));
