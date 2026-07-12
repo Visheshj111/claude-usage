@@ -6,7 +6,7 @@ type RemoteShape = Partial<{
   notifications: { milestones: number[]; lowRemaining: number[] };
 }>;
 
-let current: { peakHours: { startHourET: number; endHourET: number } } = {
+const current: { peakHours: { startHourET: number; endHourET: number } } = {
   peakHours: { ...DEFAULT_PEAK_HOURS },
 };
 

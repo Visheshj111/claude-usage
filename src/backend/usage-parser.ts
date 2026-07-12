@@ -1,6 +1,6 @@
 import type { DetectedUsage, WeeklyUsage } from './types';
 
-function numberFromValue(value: unknown): number | null {
+export function numberFromValue(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string' && value.trim()) {
     const parsed = Number(value);
@@ -9,7 +9,7 @@ function numberFromValue(value: unknown): number | null {
   return null;
 }
 
-function timestampFromValue(value: unknown): number | null {
+export function timestampFromValue(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value > 1e12 ? value : value * 1000;
   if (typeof value === 'string' && value.trim()) {
     const ts = new Date(value).getTime();
@@ -18,7 +18,7 @@ function timestampFromValue(value: unknown): number | null {
   return null;
 }
 
-function parseWeeklyField(obj: Record<string, unknown>): WeeklyUsage | null {
+export function parseWeeklyField(obj: Record<string, unknown>): WeeklyUsage | null {
   if (typeof obj.utilization !== 'number' && typeof obj.max_messages !== 'number') return null;
   return {
     usagePercent: typeof obj.utilization === 'number' ? obj.utilization : null,
@@ -44,18 +44,18 @@ export function parseUsageWindow(windowData: Record<string, unknown>, detected: 
   if (maxMessages !== null && maxMessages > 0) detected.sessionLimit = maxMessages;
 
   if (remainingMessages !== null) {
-    detected.remainingMessages = Math.max(0, Math.round(remainingMessages));
+    detected.remainingMessages = Math.max(0, remainingMessages);
   } else if (maxMessages !== null && utilization !== null) {
-    const used = Math.round((utilization / 100) * maxMessages);
-    detected.remainingMessages = Math.max(0, maxMessages - used);
+    const used = (utilization / 100) * maxMessages;
+    detected.remainingMessages = Math.max(0, Math.round((maxMessages - used) * 10) / 10);
   }
 
   if (messagesUsed !== null) {
-    detected.sessionMessagesUsed = Math.max(0, Math.round(messagesUsed));
+    detected.sessionMessagesUsed = Math.max(0, messagesUsed);
   } else if (maxMessages !== null && detected.remainingMessages !== undefined) {
     detected.sessionMessagesUsed = Math.max(0, maxMessages - detected.remainingMessages);
   } else if (maxMessages !== null && utilization !== null) {
-    detected.sessionMessagesUsed = Math.max(0, Math.round((utilization / 100) * maxMessages));
+    detected.sessionMessagesUsed = Math.max(0, (utilization / 100) * maxMessages);
   }
 
   if (resetTimestamp) detected.resetTimestamp = resetTimestamp;

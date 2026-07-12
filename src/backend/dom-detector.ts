@@ -64,7 +64,7 @@ function scanPageText(): DetectedUsage | null {
 
 // ── Time extraction ──
 
-function extractTimeFromText(text: string): number | null {
+export function extractTimeFromText(text: string): number | null {
   for (const pattern of TIME_PATTERNS) {
     const m = text.match(pattern);
     if (!m) continue;
