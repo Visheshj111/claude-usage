@@ -77,7 +77,7 @@ export async function init(): Promise<void> {
     updateIcon(initPct, initWeeklyPct);
   }
 
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     switch (message.type) {
       case "UPDATE_USAGE":
         handleUsageUpdate(message.data).then(sendResponse);
@@ -85,7 +85,7 @@ export async function init(): Promise<void> {
 
       case "GET_ALL_DATA":
         (async () => {
-          const tabId = (typeof _sender !== 'undefined' && (_sender as any)?.tab) ? ((_sender as any).tab.id as number | undefined) : undefined;
+          const tabId = (typeof sender !== 'undefined' && (sender as any)?.tab) ? ((sender as any).tab.id as number | undefined) : undefined;
           let orgId: string | null = isUsableOrgId(_bgOrgId) ? _bgOrgId : null;
           if (!orgId) {
             try {
@@ -157,6 +157,12 @@ export async function init(): Promise<void> {
         break;
 
       case "STATE_UPDATE": {
+        // Only accept STATE_UPDATE from claude.ai content scripts
+        const senderUrl = sender.url || '';
+        if (!senderUrl.startsWith('https://claude.ai') && sender.tab === undefined) {
+          sendResponse({ ok: false, reason: 'unauthorized' });
+          break;
+        }
         const incomingState = message.state as UsageState | undefined;
         if (incomingState && typeof incomingState === 'object') {
           const det: import('../backend/types').DetectedUsage = {
@@ -232,7 +238,7 @@ export async function init(): Promise<void> {
         return true;
 
       case "GET_WEBREQUEST_QUOTA": {
-        const tabId = (_sender as any)?.tab?.id;
+        const tabId = (sender as any)?.tab?.id;
         if (tabId !== undefined && pendingTabQuota.has(tabId)) {
           const quota = pendingTabQuota.get(tabId);
           pendingTabQuota.delete(tabId);
@@ -244,7 +250,7 @@ export async function init(): Promise<void> {
       }
 
       case "CONTENT_SCRIPT_READY": {
-        const readyTabId = (_sender as any)?.tab?.id as number | undefined;
+        const readyTabId = (sender as any)?.tab?.id as number | undefined;
         (async () => {
           let orgId: string | null = isUsableOrgId(_bgOrgId) ? _bgOrgId : null;
           if (!orgId) {

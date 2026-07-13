@@ -10,6 +10,7 @@ import type { UsageState, DataSource, DetectedUsage } from "./types";
 import { emptyUsage, cloneUsage, isSameState } from "./types";
 import { updateCountdown } from "./reset-parser";
 import { persistUsage, loadPersisted } from "./storage";
+import { DETECTION_COOLDOWN_MS } from '../config';
 
 const SOURCE_PRIORITY: Record<DataSource, number> = {
   network: 100,
@@ -20,7 +21,6 @@ const SOURCE_PRIORITY: Record<DataSource, number> = {
   unknown: 0,
 };
 
-const COOLDOWN_MS = 5000;
 
 export type StateChangeCallback = (newState: UsageState, oldState: UsageState) => void;
 
@@ -63,7 +63,7 @@ export function feedDetection(detected: DetectedUsage): UsageState {
   if (
     detected.confidence < currentState.confidence &&
     detected.source !== "network" &&
-    Date.now() - lastUpdated < COOLDOWN_MS
+    Date.now() - lastUpdated < DETECTION_COOLDOWN_MS
   ) {
     return currentState;
   }

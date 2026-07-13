@@ -764,3 +764,43 @@ footer button:hover {
   font-size: 9px;
   font-weight: 600;
 }
+
+/* ── Skeleton / Loading State ── */
+@keyframes pop-shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position:  400px 0; }
+}
+
+.loading .gauge-text,
+.loading .metric-val,
+.loading .prog-nums,
+.loading .prog-fill,
+.loading .confidence-pct,
+.loading .reset-time,
+.loading .session-time,
+.loading #peak-message,
+.loading #peak-timer {
+  background: linear-gradient(
+    90deg,
+    var(--bg2) 25%,
+    var(--border) 50%,
+    var(--bg2) 75%
+  ) !important;
+  background-size: 400px 100% !important;
+  animation: pop-shimmer 1.4s ease-in-out infinite !important;
+  color: transparent !important;
+  border-radius: 4px !important;
+  min-width: 32px;
+  display: inline-block;
+}
+
+.loading .prog-fill {
+  width: 55% !important;
+  opacity: 0.45;
+}
+
+.loading .confidence-fill {
+  width: 55% !important;
+  animation: pop-shimmer 1.4s ease-in-out infinite !important;
+  opacity: 0.45;
+}

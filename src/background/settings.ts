@@ -36,10 +36,13 @@ export async function getSettings(): Promise<Settings> {
     return settingsCache!;
   })();
 
-  return settingsLoadPromise;
+  const result = await settingsLoadPromise;
+  settingsLoadPromise = null;
+  return result;
 }
 
 export async function saveSettings(data: Settings): Promise<void> {
+  settingsCache = null;   // invalidate before write
   settingsCache = data;
   await chrome.storage.local.set({ settings: data });
 }

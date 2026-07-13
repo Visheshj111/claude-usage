@@ -1,4 +1,5 @@
 export {};
+import { DEFAULT_SETTINGS } from '../background/settings';
 
 document.addEventListener('DOMContentLoaded', async () => {
   const { settings } = await chrome.storage.local.get('settings');
@@ -6,10 +7,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   const themeMode = s.themeMode || 'auto';
   applyOptionsTheme(themeMode);
 
-  (document.getElementById('limit-messages') as HTMLInputElement).value = s.limits?.dailyMessages ?? 45;
-  (document.getElementById('limit-tokens') as HTMLInputElement).value = s.limits?.dailyTokens ?? 90000;
-  (document.getElementById('reset-period') as HTMLSelectElement).value = s.resetPeriod || '5h';
-  (document.getElementById('token-method') as HTMLSelectElement).value = s.tokenEstimationMethod || 'chars/4';
+  (document.getElementById('limit-messages') as HTMLInputElement).value =
+    String(s.limits?.dailyMessages ?? DEFAULT_SETTINGS.limits.dailyMessages);
+  (document.getElementById('limit-tokens') as HTMLInputElement).value =
+    String(s.limits?.dailyTokens ?? DEFAULT_SETTINGS.limits.dailyTokens);
+  (document.getElementById('reset-period') as HTMLSelectElement).value =
+    s.resetPeriod || DEFAULT_SETTINGS.resetPeriod;
+  (document.getElementById('token-method') as HTMLSelectElement).value =
+    s.tokenEstimationMethod || DEFAULT_SETTINGS.tokenEstimationMethod;
   (document.getElementById('show-notifications') as HTMLInputElement).checked = s.showNotifications !== false;
   (document.getElementById('show-inpage-widget') as HTMLInputElement).checked = s.showInPageWidget !== false;
   (document.getElementById('refiner-enabled') as HTMLInputElement).checked = s.refinerEnabled === true;
@@ -38,9 +43,9 @@ async function saveSettings() {
     refinerEnabled: (document.getElementById('refiner-enabled') as HTMLInputElement).checked,
     themeMode: (document.getElementById('theme-mode') as HTMLSelectElement).value,
     limits: {
-      dailyMessages: parseInt((document.getElementById('limit-messages') as HTMLInputElement).value, 10) || 45,
-      dailyTokens: parseInt((document.getElementById('limit-tokens') as HTMLInputElement).value, 10) || 90000,
-      sessionWindowMs: existingSettings.limits?.sessionWindowMs ?? (5 * 60 * 60 * 1000),
+      dailyMessages: parseInt((document.getElementById('limit-messages') as HTMLInputElement).value, 10) || DEFAULT_SETTINGS.limits.dailyMessages,
+      dailyTokens: parseInt((document.getElementById('limit-tokens') as HTMLInputElement).value, 10) || DEFAULT_SETTINGS.limits.dailyTokens,
+      sessionWindowMs: existingSettings.limits?.sessionWindowMs ?? DEFAULT_SETTINGS.limits.sessionWindowMs,
     },
   };
 

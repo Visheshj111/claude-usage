@@ -1,7 +1,7 @@
 import { type Settings, getSettings, DEFAULT_SETTINGS } from './settings';
 import type { DayUsage, PeriodUsage, ConversationEntry, SessionData, HourlyUsage } from './types';
 import { getState } from '../backend/state-manager';
-import { NOTIFICATIONS } from '../config';
+import { NOTIFICATIONS, STORAGE, SESSION } from '../config';
 
 function getDateKey(d?: Date): string {
   const date = d || new Date();
@@ -82,7 +82,7 @@ function initPeriodUsage(existing?: PeriodUsage): PeriodUsage {
 
 function pruneHourlyUsage(hourlyUsage: HourlyUsage): HourlyUsage {
   const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 55);
+  cutoff.setDate(cutoff.getDate() - STORAGE.hourlyPruneDays);
   const cutoffKey = getDateKey(cutoff);
   const pruned: HourlyUsage = {};
   for (const [dateKey, hours] of Object.entries(hourlyUsage)) {
@@ -229,7 +229,7 @@ export async function handleSessionUpdate(data: { action: string } & Record<stri
   let s: SessionData | null = (rawSession as SessionData) || null;
 
   if (data.action === "start") {
-    const SESSION_STALE_MS = 6 * 60 * 60 * 1000;
+    const SESSION_STALE_MS = SESSION.staleMs;
     const existing = s;
     const isStale = !existing || (Date.now() - existing.startTime) > SESSION_STALE_MS;
     if (isStale) {
@@ -361,7 +361,24 @@ export async function getHourlyUsage(): Promise<HourlyUsage> {
   return pruneHourlyUsage((hourlyUsage as HourlyUsage) || {});
 }
 
-const notifiedMilestones = new Set<number>();
+const NOTIFIED_KEY = 'notifiedMilestones';
+
+async function loadNotifiedMilestones(): Promise<Set<number>> {
+  try {
+    const { [NOTIFIED_KEY]: arr } = await chrome.storage.local.get(NOTIFIED_KEY) as { [k: string]: number[] };
+    return new Set<number>(Array.isArray(arr) ? arr : []);
+  } catch {
+    return new Set<number>();
+  }
+}
+
+async function addNotifiedMilestone(key: number): Promise<void> {
+  try {
+    const set = await loadNotifiedMilestones();
+    set.add(key);
+    await chrome.storage.local.set({ [NOTIFIED_KEY]: [...set] });
+  } catch {}
+}
 
 function checkMilestone(dayUsage: DayUsage, settings: Settings): void {
   if (!settings.showNotifications) return;
@@ -374,19 +391,22 @@ function checkMilestone(dayUsage: DayUsage, settings: Settings): void {
   const lowRem = NOTIFICATIONS.lowRemaining;
 
   const key = pct >= 100 ? 100 : lowRem.includes(remaining) ? -remaining : Math.floor(pct / 25) * 25;
-  if (notifiedMilestones.has(key)) return;
-  notifiedMilestones.add(key);
 
-  if (milestones.includes(pct) || lowRem.includes(remaining)) {
+  if (!milestones.includes(pct) && !lowRem.includes(remaining)) return;
+
+  loadNotifiedMilestones().then((set) => {
+    if (set.has(key)) return;
+    addNotifiedMilestone(key);
     chrome.notifications.create({
-      type: "basic" as chrome.notifications.TemplateType,
-      iconUrl: chrome.runtime.getURL("icons/icon48.png"),
-      title: "Claude Usage",
-      message: pct >= 100
-        ? `You've used all ${limit} messages in this window.`
-        : lowRem.includes(remaining)
-        ? `Only ${remaining} messages left in this window!`
-        : `${pct}% of your ${limit}-message window used.`,
+      type: 'basic' as chrome.notifications.TemplateType,
+      iconUrl: chrome.runtime.getURL('icons/icon48.png'),
+      title: 'Claude Usage',
+      message:
+        pct >= 100
+          ? `You've used all ${limit} messages in this window.`
+          : lowRem.includes(remaining)
+          ? `Only ${remaining} messages left in this window!`
+          : `${pct}% of your ${limit}-message window used.`,
     });
-  }
+  });
 }

@@ -1,9 +1,12 @@
-import { feedDetection, setApiConnected, setApiError } from "../backend/state-manager";
-import type { DetectedUsage, WeeklyUsage } from "../backend/types";
-import { isUsableOrgId, rememberContentOrgId, resolveOrgId, sendRuntimeMessage, fetchPlanInfo } from "./org-id";
-import { notifyOrgIdFromWatcher } from "../backend/network-monitor";
+import { feedDetection, setApiConnected, setApiError } from '../backend/state-manager';
+import type { DetectedUsage, WeeklyUsage } from '../backend/types';
+import { isUsableOrgId, rememberContentOrgId, resolveOrgId, sendRuntimeMessage, fetchPlanInfo } from './org-id';
+import { notifyOrgIdFromWatcher } from '../backend/network-monitor';
+import { POLLING } from '../config';
 
 let _onUIUpdate: (() => void) | null = null;
+
+const _postCompletionTimers = new Set<ReturnType<typeof setTimeout>>();
 
 export function setOnUIUpdate(cb: () => void): void {
   _onUIUpdate = cb;
@@ -182,8 +185,16 @@ export function handleBgUsagePush(data: Record<string, unknown>, orgId: string):
 
 export function schedulePostCompletionUsageRefresh(orgId: string | null): void {
   if (orgId) notifyOrgIdFromWatcher(orgId);
+  // Cancel any pending timers from a previous completion
+  for (const t of _postCompletionTimers) clearTimeout(t);
+  _postCompletionTimers.clear();
+
   void refreshUsageAndUI(true, orgId);
-  setTimeout(() => { void refreshUsageAndUI(true, orgId); }, 1500);
-  setTimeout(() => { void refreshUsageAndUI(true, orgId); }, 5000);
-  setTimeout(() => { void refreshUsageAndUI(true, orgId); }, 12000);
+  for (const delay of POLLING.postCompletionRetries) {
+    const t = setTimeout(() => {
+      _postCompletionTimers.delete(t);
+      void refreshUsageAndUI(true, orgId);
+    }, delay);
+    _postCompletionTimers.add(t);
+  }
 }

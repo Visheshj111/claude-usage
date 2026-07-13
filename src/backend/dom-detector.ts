@@ -23,6 +23,22 @@ const TIME_PATTERNS = [
   /([\d]{4}-[\d]{2}-[\d]{2}[T ][\d]{2}:[\d]{2}(?::[\d]{2})?(?:Z|[+-][\d:]+)?)/,
 ] as const;
 
+const PROGRESS_SELECTORS = [
+  '[role="progressbar"][aria-valuenow]',
+  '[aria-valuenow][aria-valuemax]',
+] as const;
+
+const BANNER_SELECTORS = [
+  '[role="alert"]',
+  '[role="status"]',
+  '[data-testid*="rate-limit"]',
+  '[data-testid*="usage"]',
+  '[class*="rate-limit"]',
+  '[class*="usage-warning"]',
+  '[class*="limit-banner"]',
+  '[class*="limit-reached"]',
+] as const;
+
 
 // ── Primary entry point ──
 
@@ -41,9 +57,24 @@ export function detectUsage(): DetectedUsage | null {
 // ── Progress bar scanning ──
 
 function scanProgressBars(): DetectedUsage | null {
-  // DOM scraping disabled — /usage API and cut-quota events are authoritative.
-  // Stale DOM values (e.g. cached progress bars) caused confidence-score races
-  // that overwrote fresh API data with outdated DOM readings.
+  for (const sel of PROGRESS_SELECTORS) {
+    for (const el of document.querySelectorAll(sel)) {
+      const nowAttr = el.getAttribute('aria-valuenow');
+      const maxAttr = el.getAttribute('aria-valuemax');
+      if (nowAttr === null || maxAttr === null) continue;
+      const now = parseFloat(nowAttr);
+      const max = parseFloat(maxAttr);
+      if (isNaN(now) || isNaN(max) || max <= 0) continue;
+      const pct = Math.min(100, Math.round((now / max) * 100));
+      return {
+        source: 'banner',
+        confidence: 0.70,
+        usagePercent: pct,
+        sessionLimit: max,
+        remainingMessages: Math.max(0, max - now),
+      };
+    }
+  }
   return null;
 }
 
@@ -51,14 +82,78 @@ function scanProgressBars(): DetectedUsage | null {
 // ── Banner scanning ──
 
 function scanBanners(): DetectedUsage | null {
-  // DOM scraping disabled — see scanProgressBars() comment.
+  for (const sel of BANNER_SELECTORS) {
+    for (const el of document.querySelectorAll(sel)) {
+      const text = (el as HTMLElement).innerText || el.textContent || '';
+      if (!text.trim()) continue;
+      const match = parseBannerText(text);
+      if (!match) continue;
+
+      const detected: DetectedUsage = { source: 'banner', confidence: 0.85 };
+
+      switch (match.type) {
+        case 'rate-limited':
+          detected.isRateLimited = true;
+          if (match.value) detected.resetTimestamp = match.value;
+          if (match.limitType) detected.limitType = match.limitType;
+          if (match.hardLimitResetAt) detected.hardLimitResetAt = match.hardLimitResetAt;
+          break;
+        case 'reset-time':
+          if (match.value) detected.resetTimestamp = match.value;
+          break;
+        case 'usage-percent':
+          if (match.value !== null) detected.usagePercent = match.value;
+          break;
+        case 'remaining':
+          if (match.value !== null) detected.remainingMessages = match.value;
+          break;
+      }
+      return detected;
+    }
+  }
   return null;
 }
 
 // ── Full page text scan ──
 
 function scanPageText(): DetectedUsage | null {
-  // DOM scraping disabled — see scanProgressBars() comment.
+  const USAGE_PATTERN = /messages?\s*(left|remaining)|usage limit|rate limit|available again/i;
+  const walker = document.createTreeWalker(
+    document.body,
+    NodeFilter.SHOW_TEXT,
+    {
+      acceptNode(node) {
+        const parent = node.parentElement;
+        if (!parent) return NodeFilter.FILTER_REJECT;
+        const tag = parent.tagName.toLowerCase();
+        if (['script', 'style', 'noscript', 'head'].includes(tag)) return NodeFilter.FILTER_REJECT;
+        const text = (node.textContent || '').trim();
+        if (text.length < 10) return NodeFilter.FILTER_SKIP;
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    }
+  );
+
+  let node: Node | null;
+  let checked = 0;
+  while ((node = walker.nextNode()) && checked < 500) {
+    checked++;
+    const text = (node.textContent || '').trim();
+    if (!USAGE_PATTERN.test(text)) continue;
+    const match = parseBannerText(text);
+    if (!match) continue;
+
+    const detected: DetectedUsage = { source: 'banner', confidence: 0.75 };
+    if (match.type === 'remaining' && match.value !== null) {
+      detected.remainingMessages = match.value;
+    } else if (match.type === 'usage-percent' && match.value !== null) {
+      detected.usagePercent = match.value;
+    } else if (match.type === 'rate-limited') {
+      detected.isRateLimited = true;
+      if (match.value) detected.resetTimestamp = match.value;
+    }
+    return detected;
+  }
   return null;
 }
 

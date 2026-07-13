@@ -24,8 +24,10 @@ import { setInPageWidgetVisible, detectTheme, updateUI } from "./content-script/
 import { refreshUsageAndUI, setOnUIUpdate as setUsageUIUpdate } from "./content-script/usage-api";
 import { checkPeakHours } from "./content-script/peak-hours";
 import { processPage, startObserver, checkUrlChange, onUrlChanged, ensureSession } from "./content-script/message-scanner";
+import { setTokenEstimationDivisor } from "./content-script/message-scanner";
 import { initComposerRefiner } from "./content-script/composer-refiner";
 import "./content-script/message-listener";
+import { POLLING } from './config';
 
 // ── Init ──
 const cleanupFns: (() => void)[] = [];
@@ -42,10 +44,10 @@ async function init(): Promise<void> {
 
   runDetection("navigation");
 
-  cleanupFns.push(startPeriodicScan(15000));
+  cleanupFns.push(startPeriodicScan(POLLING.scan));
 
   checkPeakHours();
-  const peakInterval = setInterval(checkPeakHours, 60000);
+  const peakInterval = setInterval(checkPeakHours, POLLING.peakCheck);
   cleanupFns.push(() => clearInterval(peakInterval));
 
   startCountdownTicker();
@@ -55,6 +57,14 @@ async function init(): Promise<void> {
   });
 
   const initialSettings = await sendRuntimeMessage<any>({ type: "GET_SETTINGS" }) ?? {};
+
+  // Wire token estimation method from settings
+  const tokenMethod: string = (initialSettings as any)?.tokenEstimationMethod ?? 'chars/4';
+  const divisorStr = tokenMethod.split('/')[1];
+  const tokenDivisor = parseFloat(divisorStr);
+  if (!isNaN(tokenDivisor) && tokenDivisor > 0) {
+    setTokenEstimationDivisor(tokenDivisor);
+  }
 
   setInPageWidgetVisible(initialSettings?.showInPageWidget !== false);
 
@@ -91,21 +101,23 @@ async function init(): Promise<void> {
   const orgIdForPlan = resolveOrgId();
   orgIdForPlan.then((oid) => { if (oid) fetchPlanInfo(oid); });
 
+  let _fastRetryActive = true;
   const usageApiInterval = setInterval(() => { 
-    if (document.visibilityState === 'visible' && TRACK.sessionStarted) {
+    if (!_fastRetryActive && document.visibilityState === 'visible' && TRACK.sessionStarted) {
       void refreshUsageAndUI(false); 
     }
-  }, 120000);
+  }, POLLING.usageNormal);
   cleanupFns.push(() => clearInterval(usageApiInterval));
   const fastRetryInterval = setInterval(() => {
     void refreshUsageAndUI(false);
-  }, 3000);
+  }, POLLING.usageFastRetry);
   const fastRetryTimer = setTimeout(() => {
+    _fastRetryActive = false;
     clearInterval(fastRetryInterval);
     resolveOrgId().then((id) => {
       if (!id) console.debug("[CUT] orgId not detected after 30s — waiting for user to open a conversation.");
     });
-  }, 30000);
+  }, POLLING.usageFastRetryWindow);
   cleanupFns.push(() => { clearTimeout(fastRetryTimer); clearInterval(fastRetryInterval); });
 
   setOnOrgIdDetected((orgId) => {
@@ -126,7 +138,7 @@ async function init(): Promise<void> {
     }
   }
 
-  TRACK.uiUpdateInterval = setInterval(updateUI, 1000);
+  TRACK.uiUpdateInterval = setInterval(updateUI, POLLING.uiUpdate);
 
   const domObserver = new MutationObserver(() => {
     runDetection("mutation");

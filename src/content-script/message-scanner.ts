@@ -1,7 +1,9 @@
-import { sendRuntimeMessage } from "./org-id";
-import { TRACK } from "./state";
-import { updateUI } from "./ui-widget";
-import { runDetection } from "../backend/tracker";
+import { sendRuntimeMessage } from './org-id';
+import { TRACK } from './state';
+import { updateUI } from './ui-widget';
+import { runDetection } from '../backend/tracker';
+import { SESSION } from '../config';
+
 
 export const MESSAGE_SELECTORS = [
   '[data-testid="user-message"]',
@@ -21,6 +23,11 @@ export const TITLE_SELECTORS = [
 
 const messageElementIds = new WeakMap<Element, string>();
 let messageElementIdSeq = 0;
+
+let _tokenDivisor = 4;
+export function setTokenEstimationDivisor(divisor: number): void {
+  _tokenDivisor = Math.max(1, divisor);
+}
 
 export function stableMessageId(el: Element): string {
   const explicitId = el.getAttribute("data-message-id") || el.getAttribute("data-testid");
@@ -95,7 +102,7 @@ export function ensureSession(): void {
 
 function startActivityMonitor(): void {
   let inactiveSince = 0;
-  const INACTIVITY_TIMEOUT = 30 * 60 * 1000;
+  const INACTIVITY_TIMEOUT = SESSION.inactivityTimeoutMs;
 
   const resetInactivity = () => { inactiveSince = 0; };
 
@@ -142,8 +149,8 @@ export function scanMessages(): void {
       messagesReceived: dca,
       charsSent: du,
       charsReceived: da,
-      tokensSent: Math.round(du / 4),
-      tokensReceived: Math.round(da / 4),
+      tokensSent: Math.round(du / _tokenDivisor),
+      tokensReceived: Math.round(da / _tokenDivisor),
       isNewConversation: TRACK.isNewConversation,
       convTotalMessagesSent: userCount,
       convTotalMessagesReceived: assistantCount,

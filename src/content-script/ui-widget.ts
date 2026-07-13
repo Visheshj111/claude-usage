@@ -3,17 +3,34 @@ import { TRACK, lastMessageStats } from "./state";
 import { runDetection } from "../backend/tracker";
 import { refineLocal, RefinementResult } from "../refiner";
 import { getTrackedOrgId } from "../backend/network-monitor";
+import { URLS } from '../config';
 
-
-export function injectStyles(): void {
+export async function injectStyles(): Promise<void> {
   if (document.getElementById("cut-style")) return;
+  // If native manifest CSS worked, the container will have fixed positioning.
+  const container = document.getElementById("cut-container");
+  if (container && getComputedStyle(container).position === "fixed") return;
+
   const stylesheetUrl = getRuntimeUrl("dist/inpage/inpage.css");
   if (!stylesheetUrl) return;
-  const link = document.createElement("link");
-  link.id = "cut-style";
-  link.rel = "stylesheet";
-  link.href = stylesheetUrl;
-  document.head.appendChild(link);
+  
+  try {
+    const res = await fetch(stylesheetUrl);
+    const cssText = await res.text();
+    const style = document.createElement("style");
+    style.id = "cut-style";
+    style.textContent = cssText;
+    
+    // Claude.ai uses strict CSP. Copy nonce if available.
+    const nonceEl = document.querySelector('[nonce]') as HTMLElement;
+    if (nonceEl && nonceEl.nonce) {
+      style.setAttribute("nonce", nonceEl.nonce);
+    }
+    
+    document.head.appendChild(style);
+  } catch (e) {
+    console.debug("[CUT] CSS injection fallback failed", e);
+  }
 }
 
 export function injectUI(): void {
@@ -27,12 +44,12 @@ export function injectUI(): void {
 
   container.innerHTML = `
     <div id="cut-widget">
-      <div id="cut-badge">0%</div>
-      <div id="cut-panel">
+      <div id="cut-badge">—</div>
+      <div id="cut-panel" class="cut-loading">
         <div class="cut-panel-header">
           <span class="cut-header-label">Claude Usage</span>
           <div class="cut-panel-actions">
-            <span class="cut-badge-sm" id="cut-badge-sm">0%</span>
+            <span class="cut-badge-sm" id="cut-badge-sm">—</span>
             <span id="cut-force-reload" class="cut-header-btn" title="Reload usage">↻</span>
             <span id="cut-export" class="cut-header-btn" title="Export">⎋</span>
             <span id="cut-open-settings" class="cut-header-btn" title="Settings">⚙</span>
@@ -56,7 +73,7 @@ export function injectUI(): void {
               <div class="cut-progress-bar">
                 <div class="cut-progress-fill safe" id="cut-msg-bar"></div>
               </div>
-              <span class="cut-progress-nums" id="cut-msg-nums">0 / 45</span>
+              <span class="cut-progress-nums" id="cut-msg-nums">—</span>
             </div>
           </div>
           <div class="cut-progress-row">
@@ -65,22 +82,22 @@ export function injectUI(): void {
               <div class="cut-progress-bar">
                 <div class="cut-progress-fill safe" id="cut-token-bar"></div>
               </div>
-              <span class="cut-progress-nums" id="cut-token-nums">0 / 90K</span>
+              <span class="cut-progress-nums" id="cut-token-nums">—</span>
             </div>
           </div>
         </div>
 
         <div class="cut-stat-grid w-stat-grid">
           <div class="cut-stat-cell">
-            <span class="cut-stat-value" id="cut-sent">0</span>
+            <span class="cut-stat-value" id="cut-sent">—</span>
             <span class="cut-stat-label">Sent</span>
           </div>
           <div class="cut-stat-cell">
-            <span class="cut-stat-value" id="cut-recv">0</span>
+            <span class="cut-stat-value" id="cut-recv">—</span>
             <span class="cut-stat-label">Recv</span>
           </div>
           <div class="cut-stat-cell">
-            <span class="cut-stat-value cut-stat-remain" id="cut-remain">0</span>
+            <span class="cut-stat-value cut-stat-remain" id="cut-remain">—</span>
             <span class="cut-stat-label">Remain</span>
           </div>
         </div>
@@ -150,7 +167,6 @@ export function injectUI(): void {
     `;
     document.body.appendChild(overlay);
 
-    attachUIEvents();
     if (s.themeMode) detectTheme(s.themeMode);
   });
 
@@ -161,7 +177,7 @@ export function injectUI(): void {
       reviewPopup.innerHTML = `
         <div class="cut-review-content">
           <span>Enjoying Claude Usage Tracker?</span>
-          <a href="https://chromewebstore.google.com/detail/claude-usage-tracker-stat/lhmabonbcohkgnifkjhknalkekeeigko?hl=en-GB&authuser=7" target="_blank" class="cut-review-btn">Give us a review ★</a>
+          <a href="${URLS.reviewPage}" target="_blank" class="cut-review-btn">Give us a review ★</a>
         </div>
         <button id="cut-review-close" title="Dismiss">×</button>
       `;
@@ -189,7 +205,7 @@ export function removeInPageUI(): void {
 
 export function setInPageWidgetVisible(visible: boolean): void {
   if (visible) {
-    injectStyles();
+    void injectStyles();
     injectUI();
     updateUI();
   } else {
@@ -484,6 +500,8 @@ export function checkRefineButton(): void {
 }
 
 export function renderUI(data: Record<string, unknown>): void {
+  // Remove loading state on first real render
+  document.getElementById('cut-panel')?.classList.remove('cut-loading');
   const get = (id: string) => document.getElementById(id);
   const daily = (data.daily || {}) as Record<string, number>;
   const remaining = (data.remaining || {}) as Record<string, number>;
@@ -499,15 +517,15 @@ export function renderUI(data: Record<string, unknown>): void {
 
   detectTheme(settings.themeMode as string | undefined);
 
-  const msgsTotal = sessionLimit || remaining.messagesTotal || 45;
+  const msgsTotal = sessionLimit || remaining.messagesTotal || null;
   const msgsUsedFromDaily = (daily.messagesSent || 0) + (daily.messagesReceived || 0);
   const msgsUsed = sessionMessagesUsed ?? msgsUsedFromDaily;
-  const msgPct = sessionPct != null ? sessionPct : Math.min(100, Math.round((msgsUsed / msgsTotal) * 100));
+  const msgPct = sessionPct != null ? sessionPct : msgsTotal ? Math.min(100, Math.round((msgsUsed / msgsTotal) * 100)) : 0;
   const tokensUsed = (daily.tokensSent || 0) + (daily.tokensReceived || 0);
-  const tokensTotal = remaining.tokensTotal || 90000;
-  const tokenPct = Math.min(100, Math.round((tokensUsed / tokensTotal) * 100));
-  const msgsRemainingRaw = remainingMessages ?? Math.max(0, msgsTotal - msgsUsed);
-  const msgsRemaining = Math.max(0, msgsRemainingRaw);
+  const tokensTotal = remaining.tokensTotal || null;
+  const tokenPct = tokensTotal ? Math.min(100, Math.round((tokensUsed / tokensTotal) * 100)) : 0;
+  const msgsRemainingRaw = remainingMessages ?? (msgsTotal !== null ? Math.max(0, msgsTotal - msgsUsed) : null);
+  const msgsRemaining = msgsRemainingRaw !== null ? Math.max(0, msgsRemainingRaw) : null;
 
   const badge = get("cut-badge");
   if (badge) {
@@ -525,9 +543,19 @@ export function renderUI(data: Record<string, unknown>): void {
     else if (msgPct >= 60) badgeSm.classList.add("warn");
   }
 
-  setNums("cut-msg-nums", msgsUsed, msgsTotal);
+  if (msgsTotal !== null) {
+    setNums("cut-msg-nums", msgsUsed, msgsTotal);
+  } else {
+    const el = document.getElementById("cut-msg-nums");
+    if (el) el.textContent = '—';
+  }
   setBar("cut-msg-bar", msgPct);
-  setNums("cut-token-nums", tokensUsed, tokensTotal);
+  if (tokensTotal !== null) {
+    setNums("cut-token-nums", tokensUsed, tokensTotal);
+  } else {
+    const el = document.getElementById("cut-token-nums");
+    if (el) el.textContent = '—';
+  }
   setBar("cut-token-bar", tokenPct);
 
   const resetEl = get("cut-reset-timer");
@@ -567,10 +595,10 @@ export function renderUI(data: Record<string, unknown>): void {
   if (recvEl) recvEl.textContent = formatNum(daily.messagesReceived);
   const remainEl = get("cut-remain");
   if (remainEl) {
-    remainEl.textContent = formatMsgCount(msgsRemaining);
+    remainEl.textContent = msgsRemaining !== null ? formatMsgCount(msgsRemaining) : '—';
     remainEl.className = "cut-stat-value cut-stat-remain";
-    if (msgsRemaining < 5) remainEl.classList.add("danger");
-    else if (msgsRemaining < 10) remainEl.classList.add("warn");
+    if (msgsRemaining !== null && msgsRemaining < 5) remainEl.classList.add("danger");
+    else if (msgsRemaining !== null && msgsRemaining < 10) remainEl.classList.add("warn");
   }
 
   const ctxRow = get("cut-ctx-row");

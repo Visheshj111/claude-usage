@@ -38,8 +38,4 @@ function injectWatcher(): void {
   }
 }
 
-if (document.readyState === 'loading') {
-  injectWatcher();
-} else {
-  injectWatcher();
-}
+injectWatcher();

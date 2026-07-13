@@ -1,6 +1,7 @@
 import type { NetworkQuota } from '../backend/types';
 import { parseUsagePayload } from '../backend/usage-parser';
 import { feedDetection } from '../backend/state-manager';
+import { POLLING, URLS } from '../config';
 
 const QUOTA_HEADERS_BG = [
   "x-ratelimit-remaining",
@@ -40,49 +41,40 @@ export async function getStoredOrgId(): Promise<string | null> {
   }
 }
 
+async function _fetchAndParseUsage(orgId: string): Promise<Record<string, unknown> | null> {
+  const resp = await fetch(`${URLS.apiBase}/${orgId}/usage`, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!resp.ok) return null;
+  _lastBgFetchAt = Date.now();
+  const data = await resp.json();
+  try {
+    const detected = parseUsagePayload(data, orgId);
+    if (detected) feedDetection(detected);
+  } catch {}
+  try { await chrome.storage.local.set({ lastFetchedAt: Date.now() }); } catch {}
+  return data;
+}
+
 export async function bgFetchAndPushUsageToAllTabs(orgId: string): Promise<void> {
   if (!isUsableOrgId(orgId)) return;
   try {
-    const resp = await fetch(`https://claude.ai/api/organizations/${orgId}/usage`, {
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-    });
-    if (!resp.ok) return;
-    _lastBgFetchAt = Date.now();
-    const data = await resp.json();
-    try {
-      const detected = parseUsagePayload(data, orgId);
-      if (detected) {
-        feedDetection(detected);
-      }
-    } catch {}
-
-    const tabs = await chrome.tabs.query({ url: "https://claude.ai/*" });
+    const data = await _fetchAndParseUsage(orgId);
+    if (!data) return;
+    const tabs = await chrome.tabs.query({ url: 'https://claude.ai/*' });
     for (const tab of tabs) {
-      if (tab.id) {
-        chrome.tabs.sendMessage(tab.id, { type: "BG_USAGE_PUSH", data, orgId }).catch(() => {});
-      }
+      if (tab.id) chrome.tabs.sendMessage(tab.id, { type: 'BG_USAGE_PUSH', data, orgId }).catch(() => {});
     }
-    try { await chrome.storage.local.set({ lastFetchedAt: Date.now() }); } catch {}
   } catch {}
 }
 
 export async function bgFetchAndPushUsageToTab(tabId: number, orgId: string): Promise<void> {
   if (!isUsableOrgId(orgId)) return;
   try {
-    const resp = await fetch(`https://claude.ai/api/organizations/${orgId}/usage`, {
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-    });
-    if (!resp.ok) return;
-    _lastBgFetchAt = Date.now();
-    const data = await resp.json();
-    try {
-      const detected = parseUsagePayload(data, orgId);
-      if (detected) feedDetection(detected);
-    } catch {}
-    chrome.tabs.sendMessage(tabId, { type: "BG_USAGE_PUSH", data, orgId }).catch(() => {});
-    try { await chrome.storage.local.set({ lastFetchedAt: Date.now() }); } catch {}
+    const data = await _fetchAndParseUsage(orgId);
+    if (!data) return;
+    chrome.tabs.sendMessage(tabId, { type: 'BG_USAGE_PUSH', data, orgId }).catch(() => {});
   } catch {}
 }
 
@@ -101,16 +93,16 @@ export function scheduleBgUsageRefresh(orgId: string, tabId?: number): void {
   if (!isUsableOrgId(orgId)) return;
   rememberBgOrgId(orgId);
   const fetchOnce = () => {
-    if (typeof tabId === "number" && tabId >= 0) {
+    if (typeof tabId === 'number' && tabId >= 0) {
       bgFetchAndPushUsageToTab(tabId, orgId);
     } else {
       bgFetchAndPushUsageToAllTabs(orgId);
     }
   };
   fetchOnce();
-  setTimeout(fetchOnce, 1500);
-  setTimeout(fetchOnce, 5000);
-  setTimeout(fetchOnce, 12000);
+  for (const delay of POLLING.postCompletionRetries) {
+    setTimeout(fetchOnce, delay);
+  }
 }
 
 if (typeof chrome.webRequest !== "undefined" && chrome.webRequest) {
