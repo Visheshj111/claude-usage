@@ -441,6 +441,16 @@ function extractHeadersFromRaw(headers: string): NetworkQuota | null {
   return found ? quota : null;
 }
 
+function _maybeExtractOrgId(pathname: string): void {
+  const orgMatch = pathname.match(/\/api\/organizations\/([^/]+)/);
+  if (!orgMatch) return;
+  const newOrgId = orgMatch[1];
+  if (newOrgId !== _cutOrgId) {
+    _cutOrgId = newOrgId;
+    _onOrgIdDetected?.(newOrgId);
+  }
+}
+
 function isRelevantUrl(input: RequestInfo | URL): boolean {
   const url =
     typeof input === "string"
@@ -453,19 +463,7 @@ function isRelevantUrl(input: RequestInfo | URL): boolean {
   try {
     const parsed = new URL(url, window.location.origin);
     const matched = CLAUDE_API_PATTERNS.some((p) => p.test(parsed.href));
-
-    // Extract org ID from any matching API URL
-    if (matched) {
-      const orgMatch = parsed.pathname.match(/\/api\/organizations\/([^/]+)/);
-      if (orgMatch) {
-        const newOrgId = orgMatch[1];
-        if (newOrgId !== _cutOrgId) {
-          _cutOrgId = newOrgId;
-          _onOrgIdDetected?.(newOrgId);
-        }
-      }
-    }
-
+    if (matched) _maybeExtractOrgId(parsed.pathname);
     return matched;
   } catch {
     return false;

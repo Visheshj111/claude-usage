@@ -46,6 +46,25 @@
     }
   }
 
+  function emitMessageStats(usage) {
+    // Emit token/cost stats from message_start so the widget can display them
+    if (!usage || typeof usage !== 'object') return;
+    var inputTokens = typeof usage.input_tokens === 'number' ? usage.input_tokens : 0;
+    var outputTokens = typeof usage.output_tokens === 'number' ? usage.output_tokens : 0;
+    var cacheCreation = typeof usage.cache_creation_input_tokens === 'number' ? usage.cache_creation_input_tokens : 0;
+    var cacheRead = typeof usage.cache_read_input_tokens === 'number' ? usage.cache_read_input_tokens : 0;
+    window.dispatchEvent(new CustomEvent('cut-message-stats', {
+      detail: {
+        inputTokens: inputTokens,
+        outputTokens: outputTokens,
+        cacheCreationTokens: cacheCreation,
+        cacheReadTokens: cacheRead,
+        totalTokens: inputTokens + outputTokens,
+        timestamp: Date.now()
+      }
+    }));
+  }
+
   function readSSE(r, orgId) {
     var reader = r.body && r.body.getReader();
     if (!reader) return;
@@ -82,6 +101,10 @@
             var obj = JSON.parse(raw);
             if (obj.message_limit || obj.usage_metadata) {
               window.dispatchEvent(new CustomEvent('cut-quota', {detail: obj}));
+            }
+            // Capture token usage from message_start event
+            if (obj.type === 'message_start' && obj.message && obj.message.usage) {
+              emitMessageStats(obj.message.usage);
             }
           } catch(e) {}
         }

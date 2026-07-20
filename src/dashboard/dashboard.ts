@@ -1,4 +1,4 @@
-﻿export {};
+export {};
 
 const LIMIT_DAYS = 14;
 const _themeMedia = window.matchMedia('(prefers-color-scheme: dark)');

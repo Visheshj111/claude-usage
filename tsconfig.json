@@ -13,7 +13,8 @@
     "declaration": false,
     "outDir": "dist",
     "rootDir": "src",
-    "sourceMap": false
+    "sourceMap": false,
+    "types": ["chrome", "vitest/globals"]
   },
-  "include": ["src/backend/**/*.ts", "src/entry-*.ts", "src/popup/*.ts", "src/options/*.ts", "src/dashboard/*.ts"]
+  "include": ["src/**/*.ts"]
 }

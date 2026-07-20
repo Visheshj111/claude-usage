@@ -13,7 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('privacy-accept-btn')?.addEventListener('click', acceptPrivacy);
 
   document.getElementById('dashboard-btn')?.addEventListener('click', () => {
-    chrome.tabs.create({ url: chrome.runtime.getURL('dist/dashboard/dashboard.html') });
+    chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD' });
   });
 
   document.getElementById('settings-btn')?.addEventListener('click', () => {
@@ -74,16 +74,24 @@ function showMainContent(): void {
   const privacyScreen = document.getElementById('privacy-screen');
   const mainContent = document.getElementById('main-content');
   if (privacyScreen) privacyScreen.style.display = 'none';
-  if (mainContent) mainContent.style.display = '';
+  if (mainContent) {
+    mainContent.style.display = '';
+    mainContent.classList.add('loading');  // show skeletons until first render
+  }
   render();
   if (!_privacyRenderTimer) {
-    _privacyRenderTimer = setInterval(render, 1000);
+    _privacyRenderTimer = setInterval(() => {
+      if (document.visibilityState !== 'hidden') render();
+    }, 1000);
   }
 }
 
 async function render(): Promise<void> {
   const result = await chrome.runtime.sendMessage({ type: 'GET_ALL_DATA' });
   if (!result) return;
+
+  // Remove skeleton loading state on first successful data render
+  document.getElementById('main-content')?.classList.remove('loading');
 
   const {
     sessionPct, sessionMessagesUsed, sessionLimit, sessionWindowMs,
@@ -204,14 +212,14 @@ async function render(): Promise<void> {
     }
   }
 
-  const msgsTotal: number = sessionLimit || remaining?.messagesTotal || 45;
+  const msgsTotal: number | null = sessionLimit || remaining?.messagesTotal || null;
   const apiRemaining: number | null = typeof remaining?.messages === 'number' ? remaining.messages : null;
-  const msgsUsed: number = sessionMessagesUsed ?? (apiRemaining !== null ? Math.max(0, msgsTotal - apiRemaining) : 0);
-  const msgsRemaining = apiRemaining ?? Math.max(0, msgsTotal - msgsUsed);
-  const pct: number = sessionPct != null ? sessionPct : Math.min(100, Math.round((msgsUsed / msgsTotal) * 100));
-  const tokensUsed: number = (remaining?.tokens != null) ? (remaining.tokensTotal || 90000) - remaining.tokens : 0;
-  const tokensTotal: number = remaining?.tokensTotal || 90000;
-  const tokenPct = Math.min(100, Math.round((tokensUsed / tokensTotal) * 100));
+  const msgsUsed: number = sessionMessagesUsed ?? (apiRemaining !== null ? Math.max(0, (msgsTotal ?? 0) - apiRemaining) : 0);
+  const msgsRemaining = apiRemaining ?? (msgsTotal !== null ? Math.max(0, msgsTotal - msgsUsed) : null);
+  const pct: number = sessionPct != null ? sessionPct : msgsTotal ? Math.min(100, Math.round((msgsUsed / msgsTotal) * 100)) : 0;
+  const tokensUsed: number = (remaining?.tokens != null) ? (remaining.tokensTotal || 0) - remaining.tokens : 0;
+  const tokensTotal: number | null = remaining?.tokensTotal || null;
+  const tokenPct = tokensTotal ? Math.min(100, Math.round((tokensUsed / tokensTotal) * 100)) : 0;
 
   const metricPct = document.getElementById('metric-pct');
   const metricUsed = document.getElementById('metric-used');
@@ -219,10 +227,11 @@ async function render(): Promise<void> {
   if (metricUsed) metricUsed.textContent = formatNum(msgsUsed);
   const remainEl = document.getElementById('metric-remain');
   if (remainEl) {
-    remainEl.textContent = formatNum(msgsRemaining);
+    // Show decimal precision (e.g. 26.1) when we have accurate data
+    remainEl.textContent = msgsRemaining !== null ? formatMsgCount(msgsRemaining) : '— / —';
     remainEl.className = 'metric-val metric-remain';
-    if (msgsRemaining < 5) remainEl.classList.add('danger');
-    else if (msgsRemaining < 10) remainEl.classList.add('warn');
+    if (msgsRemaining !== null && msgsRemaining < 5) remainEl.classList.add('danger');
+    else if (msgsRemaining !== null && msgsRemaining < 10) remainEl.classList.add('warn');
   }
 
   // Confidence bar
@@ -245,8 +254,8 @@ async function render(): Promise<void> {
 
   const sessionNums = document.getElementById('session-nums');
   const tokenNums = document.getElementById('token-nums');
-  if (sessionNums) sessionNums.textContent = `${formatNum(msgsUsed)} / ${formatNum(msgsTotal)}`;
-  if (tokenNums) tokenNums.textContent = `${formatNum(tokensUsed)} / ${formatNum(tokensTotal)}`;
+  if (sessionNums) sessionNums.textContent = msgsTotal !== null ? `${formatNum(msgsUsed)} / ${formatNum(msgsTotal)}` : '— / —';
+  if (tokenNums) tokenNums.textContent = tokensTotal !== null ? `${formatNum(tokensUsed)} / ${formatNum(tokensTotal)}` : '— / —';
 
   const dot = document.getElementById('session-dot');
   const sessionData = session as { startTime?: number; conversations?: number } | null;
@@ -258,7 +267,7 @@ async function render(): Promise<void> {
     if (sessionTime) sessionTime.textContent = formatDuration(Date.now() - sessionData.startTime);
     if (sessionConvs) sessionConvs.textContent = `${sessionData.conversations || 0} convs`;
     if (sessionUsageLine) sessionUsageLine.textContent =
-      `${formatNum(msgsUsed)} of ${formatNum(msgsTotal)} messages \u00B7 ${pct}% used`;
+      `${formatNum(msgsUsed)} of ${msgsTotal !== null ? formatNum(msgsTotal) : '—'} messages \u00B7 ${pct}% used`;
   } else {
     if (dot) dot.className = 'session-dot inactive';
     const sessionTime = document.getElementById('session-time');
@@ -348,10 +357,19 @@ function formatDuration(ms: number): string {
 }
 
 function formatNum(n: number | null | undefined): string {
-  if (!n && n !== 0) return '0';
+  if (n == null || isNaN(n as number)) return '0';
   if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
-  return String(n);
+  if (n >= 1000) return Math.round(n).toLocaleString();
+  return String(Math.round(n));
+}
+
+/** Show one decimal place when value isn't a whole number (e.g. 26.1 remaining) */
+function formatMsgCount(n: number | null | undefined): string {
+  if (n == null || isNaN(n as number)) return '0';
+  if (n <= 0) return '0';
+  if (n >= 1000) return Math.round(n).toLocaleString();
+  const rounded = Math.round(n * 10) / 10;
+  return rounded % 1 === 0 ? String(rounded) : rounded.toFixed(1);
 }
 
 function renderWeekly(
