@@ -112,7 +112,7 @@ export function injectUI(): void {
 
         <div class="cut-footer-row w-foot">
           <span class="cut-reset-label">Resets <strong class="cut-reset-time" id="cut-reset-timer">--:--:--</strong></span>
-          <span class="cut-details-link" id="cut-open-popup">Details →</span>
+          <span class="cut-details-link" id="cut-open-popup">Dashboard →</span>
         </div>
 
         <div class="cut-ratelimit-row" id="cut-ratelimit-row" style="display:none">
@@ -249,10 +249,8 @@ export function attachUIEvents(): void {
   });
   get("cut-open-popup")?.addEventListener("click", () => {
     try {
-      if (chrome.runtime?.id) chrome.runtime.openOptionsPage();
+      if (chrome.runtime?.id) chrome.runtime.sendMessage({ type: "OPEN_DASHBOARD" });
     } catch {
-      const optUrl = getRuntimeUrl("dist/options/options.html");
-      if (optUrl) window.open(optUrl, "_blank");
     }
   });
   get("cut-open-settings")?.addEventListener("click", () => {

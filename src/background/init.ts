@@ -144,6 +144,12 @@ export async function init(): Promise<void> {
         });
         return true;
 
+      case "OPEN_DASHBOARD":
+        chrome.tabs.create({ url: chrome.runtime.getURL("dist/dashboard/dashboard.html") }).then(() => {
+          sendResponse({ success: true });
+        });
+        return true;
+
       case "GET_HISTORY":
         getHistory().then(sendResponse);
         return true;

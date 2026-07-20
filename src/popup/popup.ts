@@ -13,7 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('privacy-accept-btn')?.addEventListener('click', acceptPrivacy);
 
   document.getElementById('dashboard-btn')?.addEventListener('click', () => {
-    chrome.tabs.create({ url: chrome.runtime.getURL('dist/dashboard/dashboard.html') });
+    chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD' });
   });
 
   document.getElementById('settings-btn')?.addEventListener('click', () => {
