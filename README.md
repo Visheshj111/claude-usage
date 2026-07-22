@@ -1,4 +1,4 @@
-# Claude Usage Tracker
+<img width="767" height="647" alt="image" src="https://github.com/user-attachments/assets/68a8b689-58bf-4c40-ac18-de2b7a0b6639" /># Claude Usage Tracker
 
 A Chrome extension that tracks your [Claude.ai](https://claude.ai) usage in real time — messages sent, conversations held, token consumption, and rate-limit status. Detects usage through multiple channels (network interception, DOM observation, and estimation) and displays the information in an unobtrusive in-page widget, a popup, and a full dashboard.
 
@@ -23,7 +23,7 @@ Not affiliated with Anthropic.
 
 ### From the Chrome Web Store
 
-[Link to Chrome Web Store listing] *(coming soon)*
+[Click Here](https://chromewebstore.google.com/detail/claude-usage-tracker-stat/lhmabonbcohkgnifkjhknalkekeeigko?authuser=7&hl=en-GB)
 
 ### Manual install (unpacked extension)
 
@@ -171,10 +171,6 @@ A `MutationObserver` triggers re-detection on DOM changes, and a periodic interv
 - **Injected script ↔ Content script**: Custom DOM events for org ID and completion notifications.
 - **Cross-context**: The injector script (`entry-injector.ts`) runs at `document_start` to patch `fetch`/`XHR` before page scripts execute, then the main content script initializes at `document_idle`.
 
-## Screenshots
-
-*(Screenshots to be added.)*
-
 ## Permissions
 
 | Permission | Reason |
@@ -194,7 +190,7 @@ All data is processed and stored **locally** in your browser's `chrome.storage`.
 
 ## Chrome Web Store
 
-[Link to Chrome Web Store](https://chromewebstore.google.com/) *(listing URL — add once published)*
+[Link to Chrome Web Store](https://chromewebstore.google.com/detail/claude-usage-tracker-stat/lhmabonbcohkgnifkjhknalkekeeigko?authuser=7&hl=en-GB)
 
 ## License
 
