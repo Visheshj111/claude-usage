@@ -1,3 +1,8 @@
+<img width="327" height="598" alt="image" src="https://github.com/user-attachments/assets/c710deb4-28eb-4bb2-a23e-edf66a8129f1" />
+<img width="388" height="160" alt="image" src="https://github.com/user-attachments/assets/c1ad356d-1c15-438a-9b8e-b0a4de5f0024" />
+<img width="327" height="598" alt="image" src="https://github.com/user-attachments/assets/a7466d3a-e2dc-4f01-a6ee-d92994cec7ac" />
+
+
 # Claude Usage Tracker
 
 A Chrome extension that tracks your [Claude.ai](https://claude.ai) usage in real time — messages sent, conversations held, token consumption, and rate-limit status. Detects usage through multiple channels (network interception, DOM observation, and estimation) and displays the information in an unobtrusive in-page widget, a popup, and a full dashboard.
