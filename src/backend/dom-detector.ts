@@ -66,18 +66,19 @@ function scanProgressBars(): DetectedUsage | null {
       const max = parseFloat(maxAttr);
       if (isNaN(now) || isNaN(max) || max <= 0) continue;
       const pct = Math.min(100, Math.round((now / max) * 100));
-      return {
+      const result: DetectedUsage = {
         source: 'banner',
         confidence: 0.70,
         usagePercent: pct,
         sessionLimit: max,
         remainingMessages: Math.max(0, max - now),
       };
+      if (now >= max) result.isRateLimited = true;
+      return result;
     }
   }
   return null;
 }
-
 
 // ── Banner scanning ──
 
@@ -102,7 +103,10 @@ function scanBanners(): DetectedUsage | null {
           if (match.value) detected.resetTimestamp = match.value;
           break;
         case 'usage-percent':
-          if (match.value !== null) detected.usagePercent = match.value;
+          if (match.value !== null) {
+            detected.usagePercent = match.value;
+            if (match.value >= 100) detected.isRateLimited = true;
+          }
           break;
         case 'remaining':
           if (match.value !== null) detected.remainingMessages = match.value;
@@ -148,6 +152,7 @@ function scanPageText(): DetectedUsage | null {
       detected.remainingMessages = match.value;
     } else if (match.type === 'usage-percent' && match.value !== null) {
       detected.usagePercent = match.value;
+      if (match.value >= 100) detected.isRateLimited = true;
     } else if (match.type === 'rate-limited') {
       detected.isRateLimited = true;
       if (match.value) detected.resetTimestamp = match.value;

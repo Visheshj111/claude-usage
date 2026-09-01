@@ -5,6 +5,21 @@
     try {
       var url = typeof i === 'string' ? i : i instanceof URL ? i.href : i.url;
       if (url && /claude\.ai\/api\//.test(url)) {
+        if (init && init.headers) {
+          try {
+            var h = new Headers(init.headers);
+            var extracted = {};
+            h.forEach(function(val, key) {
+              var lower = key.toLowerCase();
+              if (lower.indexOf('anthropic') !== -1 || lower === 'baggage') {
+                extracted[key] = val;
+              }
+            });
+            if (Object.keys(extracted).length > 0) {
+              window.dispatchEvent(new CustomEvent('cut-api-headers', { detail: extracted }));
+            }
+          } catch(e) {}
+        }
         var orgMatch = url.match(/\/api\/organizations\/([^/]+)/);
         var orgId = orgMatch && orgMatch[1];
         if (orgId) {

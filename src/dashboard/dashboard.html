@@ -5,26 +5,28 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Usage Dashboard — Claude Usage Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="dashboard.css">
 </head>
 <body>
   <div id="app">
     <header>
       <div class="header-left">
-        <h1>Usage</h1>
+        <h1>Your Claude Usage</h1>
         <span class="badge" id="period-badge">Daily</span>
       </div>
       <div class="header-right">
         <span class="status-dot" id="status-dot"></span>
         <span class="status-label" id="status-label">Tracking</span>
-        <button id="db-force-reload" class="db-action-btn" title="Reload usage" style="margin-left: 12px; background: transparent; border: none; font-size: 1.1em; cursor: pointer; color: var(--text-secondary); transition: transform 0.2s ease;">↻</button>
+        <button id="db-force-reload" title="Refresh usage data">↻</button>
       </div>
     </header>
 
     <!-- Overview -->
-    <section>
+    <div class="card">
       <div class="section-header">
-        <h2>Period Overview</h2>
+        <h2>Right Now</h2>
         <span class="section-meta" id="overview-period">Today</span>
       </div>
 
@@ -49,7 +51,7 @@
         </div>
         <div class="overview-stat">
           <span class="overview-val mono" id="ov-convs">0</span>
-          <span class="overview-lbl">conversations</span>
+          <span class="overview-lbl">chats</span>
         </div>
         <div class="overview-stat">
           <span class="overview-val mono" id="ov-session">--:--:--</span>
@@ -71,25 +73,23 @@
       </div>
 
       <div class="reset-row">
-        <span class="reset-lbl">Reset in</span>
+        <span class="reset-lbl">Limits reset in</span>
         <span class="mono" id="reset-timer">--:--:--</span>
       </div>
-    </section>
+    </div>
 
-    <hr class="divider">
-
-    <!-- Claude Hours Heatmap -->
-    <section>
+    <!-- Usage Squares Heatmap -->
+    <div class="card">
       <div class="section-header">
-        <h2>Claude Hours</h2>
-        <span class="section-meta" id="heatmap-range">Last 8 weeks</span>
+        <h2>Activity Map</h2>
+        <span class="section-meta" id="heatmap-range"></span>
       </div>
       <div class="heatmap-wrap">
         <div class="heatmap-scroll">
           <div class="heatmap-grid" id="hours-heatmap"></div>
         </div>
         <div class="heatmap-footer">
-          <span class="heatmap-hint">Local time. Hover a cell for exact messages.</span>
+          <span class="heatmap-hint">Hover over a square to see details.</span>
           <div class="heatmap-legend" aria-label="Heatmap legend">
             <span>Less</span>
             <span class="heat-cell level-0"></span>
@@ -101,14 +101,12 @@
           </div>
         </div>
       </div>
-    </section>
-
-    <hr class="divider">
+    </div>
 
     <!-- Daily Breakdown -->
-    <section>
+    <div class="card">
       <div class="section-header">
-        <h2>Daily Breakdown</h2>
+        <h2>Day by Day</h2>
         <span class="section-meta" id="history-count">14 days</span>
       </div>
       <table id="history-table">
@@ -118,22 +116,20 @@
             <th class="col-num">Sent</th>
             <th class="col-num">Recv</th>
             <th class="col-num">Tokens</th>
-            <th class="col-num">Convs</th>
+            <th class="col-num">Chats</th>
             <th class="col-bar">Usage</th>
           </tr>
         </thead>
         <tbody id="history-body">
-          <tr class="empty-row"><td colspan="6">No data yet.</td></tr>
+          <tr class="empty-row"><td colspan="6">No data yet. Go chat with Claude!</td></tr>
         </tbody>
       </table>
-    </section>
-
-    <hr class="divider">
+    </div>
 
     <!-- Recent Conversations -->
-    <section>
+    <div class="card">
       <div class="section-header">
-        <h2>Recent Conversations</h2>
+        <h2>Recent Chats</h2>
         <span class="section-meta" id="conv-count">0</span>
       </div>
       <table id="conv-table">
@@ -146,10 +142,10 @@
           </tr>
         </thead>
         <tbody id="conv-body">
-          <tr class="empty-row"><td colspan="4">No conversations yet.</td></tr>
+          <tr class="empty-row"><td colspan="4">No chats found.</td></tr>
         </tbody>
       </table>
-    </section>
+    </div>
 
     <div class="credit">Made by <a href="https://github.com/visheshj111" target="_blank">Vishesh Jangid</a> &middot; <a href="https://visheshj111.github.io/portfolio/" target="_blank">Portfolio</a></div>
   </div>

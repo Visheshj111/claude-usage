@@ -7,10 +7,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const themeMode = s.themeMode || 'auto';
   applyOptionsTheme(themeMode);
 
-  (document.getElementById('limit-messages') as HTMLInputElement).value =
-    String(s.limits?.dailyMessages ?? DEFAULT_SETTINGS.limits.dailyMessages);
-  (document.getElementById('limit-tokens') as HTMLInputElement).value =
-    String(s.limits?.dailyTokens ?? DEFAULT_SETTINGS.limits.dailyTokens);
+
   (document.getElementById('reset-period') as HTMLSelectElement).value =
     s.resetPeriod || DEFAULT_SETTINGS.resetPeriod;
   (document.getElementById('token-method') as HTMLSelectElement).value =
@@ -42,11 +39,7 @@ async function saveSettings() {
     showInPageWidget: (document.getElementById('show-inpage-widget') as HTMLInputElement).checked,
     refinerEnabled: (document.getElementById('refiner-enabled') as HTMLInputElement).checked,
     themeMode: (document.getElementById('theme-mode') as HTMLSelectElement).value,
-    limits: {
-      dailyMessages: parseInt((document.getElementById('limit-messages') as HTMLInputElement).value, 10) || DEFAULT_SETTINGS.limits.dailyMessages,
-      dailyTokens: parseInt((document.getElementById('limit-tokens') as HTMLInputElement).value, 10) || DEFAULT_SETTINGS.limits.dailyTokens,
-      sessionWindowMs: existingSettings.limits?.sessionWindowMs ?? DEFAULT_SETTINGS.limits.sessionWindowMs,
-    },
+    limits: existingSettings.limits || DEFAULT_SETTINGS.limits,
   };
 
   localStorage.setItem('themeMode', settings.themeMode);

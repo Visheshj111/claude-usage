@@ -108,9 +108,10 @@ export function initComposerRefiner(): void {
 
         deepInProgress = true;
         deepBtn.textContent = '⏳ Refining…';
-        deepBtn.style.opacity = '0.6';
+        deepBtn.style.opacity = '0.65';
         deepBtn.style.cursor = 'wait';
         refBtn.disabled = true;
+        let succeeded = false;
 
         const text = getInputText();
         try {
@@ -118,11 +119,16 @@ export function initComposerRefiner(): void {
           showRefinementOverlay(result);
           const statusEl = document.getElementById('cut-refine-status') as HTMLElement | null;
           if (statusEl) statusEl.style.display = 'none';
+          succeeded = true;
+          deepBtn.textContent = '✓ Done';
+          deepBtn.style.opacity = '1';
+          setTimeout(() => { if (deepBtn.textContent === '✓ Done') deepBtn.textContent = '⚡ Deep'; }, 1800);
         } catch (err) {
           console.error('[CUT composer deep refine] failed:', err);
           const errMsg = err instanceof Error ? err.message : String(err);
           deepBtn.textContent = '❌ Failed';
-          setTimeout(() => { deepBtn.textContent = '⚡ Deep'; }, 2500);
+          deepBtn.style.opacity = '1';
+          setTimeout(() => { if (deepBtn.textContent === '❌ Failed') deepBtn.textContent = '⚡ Deep'; }, 2500);
           try {
             const fallback = refineLocal(text);
             showRefinementOverlay(fallback);
@@ -133,11 +139,10 @@ export function initComposerRefiner(): void {
             }
           } catch { }
         } finally {
-          deepBtn.style.opacity = '1';
           deepBtn.style.cursor = 'pointer';
           refBtn.disabled = false;
           deepInProgress = false;
-          if (deepBtn.textContent === '⏳ Refining…') deepBtn.textContent = '⚡ Deep';
+          if (!succeeded && deepBtn.textContent === '⏳ Refining…') deepBtn.textContent = '⚡ Deep';
         }
       });
 

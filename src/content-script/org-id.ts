@@ -1,4 +1,4 @@
-import { getTrackedOrgId, notifyOrgIdFromWatcher } from "../backend/network-monitor";
+import { getTrackedOrgId, notifyOrgIdFromWatcher, getLatestApiHeaders } from "../backend/network-monitor";
 import { feedDetection } from "../backend/state-manager";
 import type { DetectedUsage, PlanTier } from "../backend/types";
 
@@ -110,9 +110,15 @@ export async function fetchPlanInfo(orgId: string): Promise<void> {
       return;
     }
 
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const latestHeaders = getLatestApiHeaders();
+    for (const [k, v] of Object.entries(latestHeaders)) {
+      headers[k] = v;
+    }
+
     const response = await fetch(
       `https://claude.ai/api/bootstrap/${orgId}/app_start?statsig_hashing_algorithm=djb2`,
-      { credentials: "include", headers: { "Content-Type": "application/json" } }
+      { credentials: "include", headers }
     );
     if (!response.ok) {
       console.debug("[CUT] Bootstrap plan fetch failed", { orgId, status: response.status });

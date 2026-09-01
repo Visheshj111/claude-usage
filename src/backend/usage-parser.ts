@@ -70,9 +70,13 @@ export function parseUsageWindow(windowData: Record<string, unknown>, detected: 
 }
 
 export function parseUsagePayload(data: Record<string, unknown>, orgId?: string): DetectedUsage | null {
-  if (!data || !data.five_hour || typeof data.five_hour !== 'object') return null;
+  if (!data || typeof data !== 'object') return null;
 
-  const fh = data.five_hour as Record<string, unknown>;
+  const hasFiveHour = data.five_hour && typeof data.five_hour === 'object';
+  const hasMaxed = data.maxed && typeof data.maxed === 'object';
+
+  if (!hasFiveHour && !hasMaxed) return null;
+
   const detected: DetectedUsage = {
     source: 'network',
     confidence: 0.95,
@@ -80,9 +84,11 @@ export function parseUsagePayload(data: Record<string, unknown>, orgId?: string)
   };
   if (orgId) detected.orgId = orgId;
 
-  parseUsageWindow(fh, detected);
+  if (hasFiveHour) {
+    parseUsageWindow(data.five_hour as Record<string, unknown>, detected);
+  }
 
-  if (data.maxed && typeof data.maxed === 'object') {
+  if (hasMaxed) {
     const mx = data.maxed as Record<string, unknown>;
     detected.limitType = 'hard';
     const hardReset = timestampFromValue(mx.resets_at ?? mx.reset_at ?? mx.window_reset_at);
@@ -92,7 +98,9 @@ export function parseUsagePayload(data: Record<string, unknown>, orgId?: string)
     }
     if (typeof mx.messages_used === 'number') detected.sessionMessagesUsed = mx.messages_used;
     detected.isRateLimited = true;
-  } else {
+    detected.usagePercent = 100;
+    if (detected.remainingMessages === undefined) detected.remainingMessages = 0;
+  } else if (hasFiveHour) {
     detected.limitType = 'soft';
   }
 

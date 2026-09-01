@@ -18,6 +18,8 @@ function tokenEstimate(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
+import { getLatestApiHeaders } from "./backend/network-monitor";
+
 function buildResult(
   original: string,
   refined: string,
@@ -183,70 +185,91 @@ export async function refineWithAPI(
 ): Promise<RefinementResult> {
   const baseUrl = `https://claude.ai/api/organizations/${orgId}`;
 
-  // Step 1: create an ephemeral conversation
+  const baseHeaders: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...getLatestApiHeaders(),
+  };
+
+  // Step 1: create an ephemeral conversation with a marker name so it's
+  // identifiable if the cleanup DELETE somehow fails.
+  const convUuid = crypto.randomUUID();
   const createResp = await fetch(`${baseUrl}/chat_conversations`, {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "", uuid: crypto.randomUUID() }),
+    headers: baseHeaders,
+    body: JSON.stringify({ name: "[cut-refine-ephemeral]", uuid: convUuid }),
   });
 
   if (!createResp.ok) {
+    const body = await createResp.text().catch(() => "");
     throw new Error(
-      `[refiner] Failed to create conversation: ${createResp.status}`
+      `[refiner] Failed to create conversation (${createResp.status}): ${body.slice(0, 120)}`
     );
   }
 
   const convo = (await createResp.json()) as { uuid?: string };
-  const convId = convo.uuid;
-  if (!convId) {
-    throw new Error("[refiner] No conversation uuid in response");
-  }
+  const convId = convo.uuid ?? convUuid;
 
-  // Step 2: send a completion request and stream the response
-  const completionResp = await fetch(
-    `${baseUrl}/chat_conversations/${convId}/completion`,
-    {
-      method: "POST",
+  // cleanup helper — always call this, even on failure
+  const cleanupConv = (): void => {
+    void fetch(`${baseUrl}/chat_conversations/${convId}`, {
+      method: "DELETE",
       credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "text/event-stream",
-      },
-      body: JSON.stringify({
-        stream: true,
-        messages: [
-          {
-            role: "user",
-            content: `${REFINER_SYSTEM_PROMPT}\n\nPrompt to optimize:\n${text}`,
-          },
-        ],
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        source: "chat_window",
-        attachments: [],
-        files: [],
-      }),
-    }
-  );
+      headers: baseHeaders,
+    }).catch(() => { /* swallow — cleanup is non-fatal */ });
+  };
 
-  if (!completionResp.ok) {
+  let completionResp: Response;
+  try {
+    // Step 2: send a completion request using the messages array format
+    // that the current claude.ai internal API expects.
+    completionResp = await fetch(
+      `${baseUrl}/chat_conversations/${convId}/completion`,
+      {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          ...baseHeaders,
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify({
+          prompt: `${REFINER_SYSTEM_PROMPT}\n\nPrompt to optimize:\n${text}`,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          source: "chat_window",
+          model: "claude-sonnet-4-5",
+          attachments: [],
+          files: [],
+          rendering_mode: "raw",
+          request_id: crypto.randomUUID(),
+        }),
+      }
+    );
+  } catch (networkErr) {
+    cleanupConv();
     throw new Error(
-      `[refiner] Completion request failed: ${completionResp.status}`
+      `[refiner] Network error during completion: ${networkErr instanceof Error ? networkErr.message : String(networkErr)}`
     );
   }
 
-  // Step 3: parse SSE stream (same pattern as watcher.js)
-  const refined = await readSSEResponse(completionResp);
+  if (!completionResp.ok) {
+    cleanupConv();
+    const body = await completionResp.text().catch(() => "");
+    throw new Error(
+      `[refiner] Completion request failed (${completionResp.status}): ${body.slice(0, 200)}`
+    );
+  }
 
-  // Step 4: fire-and-forget DELETE to clean up the ephemeral conversation
-  // so it doesn't permanently appear in the user's claude.ai history.
-  void fetch(`${baseUrl}/chat_conversations/${convId}`, {
-    method: "DELETE",
-    credentials: "include",
-  }).catch(() => { /* swallow — cleanup failure is non-fatal */ });
+  // Step 3: parse SSE stream — always DELETE afterwards
+  let refined: string;
+  try {
+    refined = await readSSEResponse(completionResp);
+  } finally {
+    // Step 4: DELETE the ephemeral conversation whether or not streaming succeeded
+    cleanupConv();
+  }
 
   if (!refined || refined.trim().length === 0) {
-    throw new Error("[refiner] API returned empty response");
+    throw new Error("[refiner] API returned empty response — model may have refused or quota is exhausted");
   }
 
   return buildResult(text, refined.trim(), "api");

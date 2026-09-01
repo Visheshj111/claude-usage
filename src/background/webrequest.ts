@@ -46,9 +46,16 @@ async function _fetchAndParseUsage(orgId: string): Promise<Record<string, unknow
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
   });
-  if (!resp.ok) return null;
+  if (!resp.ok && resp.status !== 403 && resp.status !== 429) return null;
   _lastBgFetchAt = Date.now();
-  const data = await resp.json();
+  let data: Record<string, unknown> | null = null;
+  try {
+    data = await resp.json();
+  } catch {
+    return null;
+  }
+  if (!data) return null;
+  
   try {
     const detected = parseUsagePayload(data, orgId);
     if (detected) feedDetection(detected);

@@ -1,6 +1,7 @@
 import { resolveOrgId } from "./org-id";
 import { TRACK } from "./state";
 import { findDOMExportMessages, isUserMessage, extractDOMText, extractTitle } from "./message-scanner";
+import { showExportDialog } from "../shared/export-dialog";
 
 async function fetchConversationFromAPI(
   conversationId: string,
@@ -51,7 +52,10 @@ function extractAPIMessageText(msg: Record<string, unknown>): string {
   return parts.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-export async function exportChat(): Promise<{ success: boolean; markdown?: string; title?: string; error?: string }> {
+export async function exportChat(
+  percentage: number = 100,
+  format: 'md' | 'txt' | 'json' = 'md'
+): Promise<{ success: boolean; content?: string; title?: string; error?: string }> {
   const url = location.href;
   if (!url.includes("claude.ai") || !url.includes("/chat/")) {
     return { success: false, error: "Not on a chat page" };
@@ -66,45 +70,77 @@ export async function exportChat(): Promise<{ success: boolean; markdown?: strin
       const title = (typeof data.name === "string" && data.name) ||
         TRACK.conversationTitle || extractTitle() || "Claude Chat";
       const timestamp = new Date().toISOString().slice(0, 10);
-      const lines: string[] = [`# ${title}`, `*Exported on ${timestamp}*`, ""];
 
       const chatMessages = data.chat_messages as Record<string, unknown>[];
-      for (const msg of chatMessages) {
-        const sender = msg.sender === "human" ? "User" : "Claude";
-        const text = extractAPIMessageText(msg);
-        if (!text) continue;
-        lines.push(`**${sender}**: ${text}`, "");
-      }
+      const startIndex = Math.max(0, Math.floor(chatMessages.length * (1 - percentage / 100)));
+      const messagesToExport = chatMessages.slice(startIndex);
 
-      return { success: true, markdown: lines.join("\n"), title };
+      const extracted = messagesToExport.map(msg => ({
+        sender: msg.sender === "human" ? "User" : "Claude",
+        text: extractAPIMessageText(msg)
+      })).filter(m => m.text);
+
+      const content = formatMessages(title, timestamp, extracted, format);
+      return { success: true, content, title };
     }
   }
 
   const title = TRACK.conversationTitle || extractTitle() || "Claude Chat";
   const timestamp = new Date().toISOString().slice(0, 10);
-  const lines: string[] = [`# ${title}`, `*Exported on ${timestamp}*`, ""];
 
   const domMessages = findDOMExportMessages();
   if (domMessages.length === 0) {
     return { success: false, error: "No messages found" };
   }
 
-  for (const el of domMessages) {
-    const role = isUserMessage(el) ? "User" : "Claude";
-    const text = extractDOMText(el);
-    if (!text) continue;
-    lines.push(`**${role}**: ${text}`, "");
-  }
+  const startIndex = Math.max(0, Math.floor(domMessages.length * (1 - percentage / 100)));
+  const messagesToExport = domMessages.slice(startIndex);
 
-  return { success: true, markdown: lines.join("\n"), title };
+  const extracted = messagesToExport.map(el => ({
+    sender: isUserMessage(el) ? "User" : "Claude",
+    text: extractDOMText(el) || ""
+  })).filter(m => m.text);
+
+  const content = formatMessages(title, timestamp, extracted, format);
+  return { success: true, content, title };
 }
 
-export function handleWidgetExport(): void {
-  exportChat().then((result) => {
-    if (!result.success || !result.markdown) {
+function formatMessages(title: string, timestamp: string, messages: { sender: string; text: string }[], format: 'md' | 'txt' | 'json'): string {
+  if (format === 'json') {
+    return JSON.stringify({ title, timestamp, messages }, null, 2);
+  }
+  
+  const lines: string[] = [];
+  if (format === 'md') {
+    lines.push(`# ${title}`, `*Exported on ${timestamp}*`, "");
+  } else {
+    lines.push(`Title: ${title}`, `Exported on: ${timestamp}`, "");
+  }
+
+  for (const msg of messages) {
+    if (format === 'md') {
+      lines.push(`**${msg.sender}**: ${msg.text}`, "");
+    } else {
+      lines.push(`${msg.sender}: ${msg.text}`, "");
+    }
+  }
+  
+  return lines.join("\n");
+}
+
+export async function handleWidgetExport(): Promise<void> {
+  const container = document.getElementById("cut-container") || document.body;
+  const isDark = container.classList.contains("cut-dark") || document.documentElement.classList.contains("dark");
+  
+  const result = await showExportDialog(container, isDark);
+  if (!result) return; // User cancelled
+
+  exportChat(result.percentage, result.format).then((exportResult) => {
+    if (!exportResult.success || !exportResult.content) {
+      if (exportResult.error) alert(`Export failed: ${exportResult.error}`);
       return;
     }
-    downloadFile(result.markdown, result.title ?? "claude-chat", "md");
+    downloadFile(exportResult.content, exportResult.title ?? "claude-chat", result.format);
   });
 }
 

@@ -25,7 +25,7 @@ try {
           sendResponse(getState());
           break;
         case "EXPORT_CHAT":
-          exportChat().then(sendResponse);
+          exportChat(msg.percentage, msg.format).then(sendResponse);
           return true;
       }
     });

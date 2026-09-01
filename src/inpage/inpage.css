@@ -104,7 +104,7 @@
 
 /* ── Expanded Panel ── */
 #cut-panel {
-  width: 320px;
+  width: 380px;
   background: var(--cut-bg);
   border: 1px solid var(--cut-border2);
   border-radius: var(--cut-radius-card);
@@ -177,6 +177,12 @@
   border-radius: var(--cut-radius-sm);
   user-select: none;
   transition: background 0.1s ease, color 0.1s ease;
+}
+
+.cut-text-btn {
+  width: auto;
+  padding: 0 8px;
+  gap: 4px;
 }
 
 .cut-header-btn:hover {

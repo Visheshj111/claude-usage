@@ -40,7 +40,7 @@ async function refresh(): Promise<void> {
   if (!data) return;
   renderOverview(data);
   renderHistory();
-  renderHourlyHeatmap();
+  renderUsageSquares();
   renderConversations(data);
 }
 
@@ -122,45 +122,65 @@ async function renderHistory(): Promise<void> {
   }
 }
 
-async function renderHourlyHeatmap(): Promise<void> {
-  const hourlyUsage: Record<string, number[]> | null = await chrome.runtime.sendMessage({ type: 'GET_HOURLY_USAGE' });
+async function renderUsageSquares(): Promise<void> {
+  const result: [string, DayData][] | null = await chrome.runtime.sendMessage({ type: 'GET_HISTORY' });
   const grid = document.getElementById('hours-heatmap');
   const range = document.getElementById('heatmap-range');
-  if (!grid) return;
+  
+  const sectionTitle = grid?.closest('section')?.querySelector('h2');
+  if (sectionTitle) sectionTitle.textContent = 'Usage Squares';
 
-  const days = getRecentDateKeys(56);
-  const maxHour = Math.max(
-    ...days.flatMap((dateKey) => {
-      const hours = hourlyUsage?.[dateKey] || [];
-      return Array.from({ length: 24 }, (_, hour) => Number(hours[hour]) || 0);
-    }),
-    0
-  );
+  if (!grid || !result) return;
+
+  let earliestKey = undefined;
+  if (result.length > 0) {
+    const dates = result.map(([date]) => date).sort();
+    earliestKey = dates[0];
+  }
+  const days = getRecentDateKeys(earliestKey);
+  
+  const maxDaily = Math.max(...result.map(([, day]) => (day.messagesSent || 0) + (day.messagesReceived || 0)), 0);
 
   if (range) range.textContent = `${days.length} days`;
 
-  const hourHeaders = Array.from({ length: 24 }, (_, hour) => {
-    const label = hour % 3 === 0 ? String(hour).padStart(2, '0') : '';
-    return `<span class="heat-hour">${label}</span>`;
-  }).join('');
+  const dataMap = new Map<string, number>();
+  for (const [date, day] of result) {
+    dataMap.set(date, (day.messagesSent || 0) + (day.messagesReceived || 0));
+  }
 
-  const rows = days.map((dateKey) => {
-    const hours = hourlyUsage?.[dateKey] || [];
-    const dayTotal = Array.from({ length: 24 }, (_, hour) => Number(hours[hour]) || 0)
-      .reduce((sum, count) => sum + count, 0);
-    const cells = Array.from({ length: 24 }, (_, hour) => {
-      const count = Number(hours[hour]) || 0;
-      const level = heatLevel(count, maxHour);
-      const label = `${dateKey} ${String(hour).padStart(2, '0')}:00 - ${formatNum(count)} messages`;
-      return `<span class="heat-cell level-${level}" title="${esc(label)}" aria-label="${esc(label)}"></span>`;
-    }).join('');
-    return `<div class="heat-row">
-      <span class="heat-date" title="${esc(dateKey)}">${formatHeatmapDate(dateKey)}</span>
-      <div class="heat-cells" title="${esc(`${dateKey}: ${formatNum(dayTotal)} messages`)}">${cells}</div>
-    </div>`;
-  }).join('');
+  // Reverse so it's oldest to newest
+  const datesChronological = days.slice().reverse();
+  
+  // Calculate padding for the first week so days align correctly (0 = Sun, 1 = Mon, etc.)
+  let padEmpty = 0;
+  if (datesChronological.length > 0) {
+    const firstDateMatch = datesChronological[0].match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (firstDateMatch) {
+      const firstDate = new Date(Number(firstDateMatch[1]), Number(firstDateMatch[2]) - 1, Number(firstDateMatch[3]));
+      padEmpty = firstDate.getDay(); 
+    }
+  }
 
-  grid.innerHTML = `<div class="heat-header"><span></span><div class="heat-hours">${hourHeaders}</div></div>${rows}`;
+  const cells: string[] = [];
+  for (let i = 0; i < padEmpty; i++) {
+    cells.push(`<div style="width: 14px; height: 14px; background: transparent;"></div>`);
+  }
+
+  for (const dateKey of datesChronological) {
+    const count = dataMap.get(dateKey) || 0;
+    const level = heatLevel(count, maxDaily);
+    const label = `${formatHeatmapDate(dateKey)} - ${formatNum(count)} messages`;
+    cells.push(`<div class="heat-cell level-${level}" style="width: 14px; height: 14px; border-radius: 2px;" title="${esc(label)}" aria-label="${esc(label)}"></div>`);
+  }
+
+  grid.style.display = 'grid';
+  grid.style.gridAutoFlow = 'column';
+  grid.style.gridTemplateRows = 'repeat(7, 1fr)';
+  grid.style.gap = '4px';
+  grid.style.minWidth = '0';
+  grid.style.padding = '8px 0';
+  
+  grid.innerHTML = cells.join('');
 }
 
 interface ConvEntry { startedAt: string; messagesSent?: number; messagesReceived?: number; tokensSent?: number; tokensReceived?: number; title?: string; }
@@ -239,10 +259,22 @@ function formatDate(iso: string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function getRecentDateKeys(days: number): string[] {
+function getRecentDateKeys(earliestDateKey?: string): string[] {
   const result: string[] = [];
   const d = new Date();
   d.setHours(0, 0, 0, 0);
+
+  let days = 14; // default
+  if (earliestDateKey) {
+    const match = earliestDateKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (match) {
+      const earliest = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+      const diffTime = d.getTime() - earliest.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+      days = Math.max(diffDays, 7);
+    }
+  }
+
   for (let i = days - 1; i >= 0; i--) {
     const day = new Date(d);
     day.setDate(d.getDate() - i);

@@ -72,6 +72,14 @@ window.addEventListener("cut-org-id", ((e: CustomEvent<string>) => {
   rememberOrgId(e.detail);
 }) as EventListener);
 
+let _latestApiHeaders: Record<string, string> = {};
+export function getLatestApiHeaders(): Record<string, string> {
+  return _latestApiHeaders;
+}
+window.addEventListener("cut-api-headers", ((e: CustomEvent<Record<string, string>>) => {
+  _latestApiHeaders = { ..._latestApiHeaders, ...e.detail };
+}) as EventListener);
+
 // Claude's actual API endpoints (updated from generic guesses)
 const CLAUDE_API_PATTERNS = [
   // Primary: conversation completion (SSE stream)

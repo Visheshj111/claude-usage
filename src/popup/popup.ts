@@ -1,4 +1,5 @@
 export {};
+import { showExportDialog } from "../shared/export-dialog";
 
 const _themeMedia = window.matchMedia('(prefers-color-scheme: dark)');
 let _themeMode = 'auto';
@@ -12,11 +13,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('privacy-accept-btn')?.addEventListener('click', acceptPrivacy);
 
-  document.getElementById('dashboard-btn')?.addEventListener('click', () => {
+  document.getElementById('dashboard-btn')?.addEventListener('click', (e) => {
+    e.preventDefault();
     chrome.runtime.sendMessage({ type: 'OPEN_DASHBOARD' });
   });
 
-  document.getElementById('settings-btn')?.addEventListener('click', () => {
+  document.getElementById('settings-btn')?.addEventListener('click', (e) => {
+    e.preventDefault();
     chrome.runtime.openOptionsPage();
   });
 
@@ -409,24 +412,35 @@ async function handleExport(): Promise<void> {
     return;
   }
 
+  const isDark = document.body.classList.contains('cut-dark');
+  const dialogResult = await showExportDialog(document.body, isDark);
+  if (!dialogResult) return; // User cancelled
+  
+  const { percentage: percent, format } = dialogResult;
+
   try {
-    const result = await chrome.tabs.sendMessage(tab.id, { type: 'EXPORT_CHAT' });
-    if (!result?.success || !result?.markdown) {
+    const result = await chrome.tabs.sendMessage(tab.id, { type: 'EXPORT_CHAT', percentage: percent, format: format });
+    if (!result?.success || !result?.content) {
       alert(result?.error || 'Could not export chat.');
       return;
     }
-    downloadMarkdown(result.markdown, result.title || 'claude-chat');
+    downloadFile(result.content, result.title || 'claude-chat', format);
   } catch {
     alert('Could not reach the page. Try refreshing claude.ai.');
   }
 }
 
-function downloadMarkdown(content: string, title: string): void {
-  const blob = new Blob([content], { type: 'text/markdown' });
+function downloadFile(content: string, title: string, ext: string): void {
+  const typeMap: Record<string, string> = {
+    'md': 'text/markdown',
+    'txt': 'text/plain',
+    'json': 'application/json'
+  };
+  const blob = new Blob([content], { type: typeMap[ext] || 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = title.replace(/[^a-zA-Z0-9\- ]/g, '').trim() + '.md';
+  a.download = title.replace(/[^a-zA-Z0-9\- ]/g, '').trim() + '.' + ext;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

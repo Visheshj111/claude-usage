@@ -51,8 +51,8 @@ export function injectUI(): void {
           <div class="cut-panel-actions">
             <span class="cut-badge-sm" id="cut-badge-sm">—</span>
             <span id="cut-force-reload" class="cut-header-btn" title="Reload usage">↻</span>
-            <span id="cut-export" class="cut-header-btn" title="Export">⎋</span>
-            <span id="cut-open-settings" class="cut-header-btn" title="Settings">⚙</span>
+            <span id="cut-export" class="cut-header-btn cut-text-btn" title="Export">⎋ Export</span>
+            <span id="cut-open-settings" class="cut-header-btn cut-text-btn" title="Settings">⚙ Settings</span>
             <span id="cut-toggle-min" class="cut-header-btn" title="Minimize">–</span>
             <span id="cut-close" class="cut-header-btn" title="Close">×</span>
           </div>
