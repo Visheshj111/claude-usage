@@ -45,6 +45,10 @@ window.addEventListener("cut-conversation-synced", ((e: CustomEvent<{ orgId?: st
   schedulePostCompletionUsageRefresh(e.detail?.orgId || null);
 }) as EventListener);
 
+window.addEventListener('cut-debug', ((e: CustomEvent<string>) => {
+  console.log('[CUT] WATCHER:', e.detail);
+}) as EventListener);
+
 window.addEventListener("cut-quota", ((e: CustomEvent) => {
   const data = e.detail;
   if (!data || typeof data !== "object") return;

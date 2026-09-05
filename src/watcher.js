@@ -1,45 +1,59 @@
 (function(){
-  var orig = window.fetch.bind(window);
-  window.fetch = function(i, init) {
-    var url = typeof i === 'string' ? i : i instanceof URL ? i.href : i.url;
-    if (url && /claude\.ai\/api\//.test(url)) {
-      console.log('[CUT] fetch wrapper called for URL: ' + url);
-    }
-    
-    var respPromise = orig(i, init);
+  function debugLog(msg) {
     try {
-      if (url && /claude\.ai\/api\//.test(url)) {
-        if (init && init.headers) {
-          try {
-            var h = new Headers(init.headers);
-            var extracted = {};
-            h.forEach(function(val, key) {
-              var lower = key.toLowerCase();
-              if (lower.indexOf('anthropic') !== -1 || lower === 'baggage') {
-                extracted[key] = val;
-              }
-            });
-            if (Object.keys(extracted).length > 0) {
-              window.dispatchEvent(new CustomEvent('cut-api-headers', { detail: extracted }));
+      window.dispatchEvent(new CustomEvent('cut-debug', { detail: msg }));
+    } catch(e) {}
+  }
+
+  debugLog('WATCHER INIT: script loaded into MAIN world');
+
+  var orig = window.fetch;
+  window.fetch = async function(i, init) {
+    var url = typeof i === 'string' ? i : i instanceof URL ? i.href : i.url;
+    var isClaudeApi = url && /claude\.ai\/api\//.test(url);
+    
+    if (isClaudeApi) {
+      debugLog('fetch wrapper called for URL: ' + url);
+      if (init && init.headers) {
+        try {
+          var h = new Headers(init.headers);
+          var extracted = {};
+          h.forEach(function(val, key) {
+            var lower = key.toLowerCase();
+            if (lower.indexOf('anthropic') !== -1 || lower === 'baggage') {
+              extracted[key] = val;
             }
-          } catch(e) {}
-        }
+          });
+          if (Object.keys(extracted).length > 0) {
+            window.dispatchEvent(new CustomEvent('cut-api-headers', { detail: extracted }));
+          }
+        } catch(e) {}
+      }
+    }
+
+    var resp = await orig.apply(this, arguments);
+
+    if (isClaudeApi) {
+      try {
         var orgMatch = url.match(/\/api\/organizations\/([^/]+)/);
         var orgId = orgMatch && orgMatch[1];
         if (orgId) {
           window.dispatchEvent(new CustomEvent('cut-org-id', {detail: orgId}));
         }
-        respPromise.then(function(resp) {
-          var ct = resp.headers.get('content-type') || '';
-          if (ct.indexOf('text/event-stream') !== -1) {
-            readSSE(resp.clone(), orgId);
-          } else if (ct.indexOf('application/json') !== -1) {
-            readJSON(resp.clone(), orgId, url);
-          }
-        }).catch(function(){});
+
+        var ct = resp.headers.get('content-type') || '';
+        if (ct.indexOf('text/event-stream') !== -1) {
+          debugLog('Intercepted SSE stream for orgId=' + orgId);
+          readSSE(resp.clone(), orgId);
+        } else if (ct.indexOf('application/json') !== -1) {
+          readJSON(resp.clone(), orgId, url);
+        }
+      } catch(e) {
+        debugLog('Error processing response: ' + e.toString());
       }
-    } catch(e) {}
-    return respPromise;
+    }
+    
+    return resp;
   };
 
   function isConversationSyncUrl(url) {
