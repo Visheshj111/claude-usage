@@ -49,12 +49,12 @@ window.addEventListener("cut-quota", ((e: CustomEvent) => {
   const data = e.detail;
   if (!data || typeof data !== "object") return;
 
-  console.debug("[CUT] cut-quota event received. Has message_limit:", !!data.message_limit, "Has windows:", !!(data.message_limit as any)?.windows);
+  console.log("[CUT] cut-quota event received. Has message_limit:", !!data.message_limit, "Has windows:", !!(data.message_limit as any)?.windows);
 
   // Prefer the richer DetectedUsage path (handles new windows format + weekly data)
   const detected = mapEventToDetected(data);
   if (detected) {
-    console.debug("[CUT] cut-quota → new windows format. pct:", detected.usagePercent, "resetTs:", detected.resetTimestamp, "weekly:", detected.weeklyUsage?.usagePercent);
+    console.log("[CUT] cut-quota → new windows format. pct:", detected.usagePercent, "resetTs:", detected.resetTimestamp, "weekly:", detected.weeklyUsage?.usagePercent);
     feedDetection(detected);
     // Persist SSE snapshot for free-plan fallback (async, fire-and-forget).
     // orgId may not be in `detected` (SSE payload doesn't carry it), fall back to state.
@@ -69,11 +69,11 @@ window.addEventListener("cut-quota", ((e: CustomEvent) => {
   // Legacy path: usage_metadata only (no message_limit in this event)
   const quota = mapEventToQuota(data);
   if (quota) {
-    console.debug("[CUT] cut-quota → legacy quota. remaining:", quota.remaining, "reset:", quota.reset);
+    console.log("[CUT] cut-quota → legacy quota. remaining:", quota.remaining, "reset:", quota.reset);
     handleNetworkQuota(quota);
     void refreshUsageAndUI(false);
   } else {
-    console.debug("[CUT] cut-quota → no usable data extracted from event.");
+    console.log("[CUT] cut-quota → no usable data extracted from event.");
   }
 }) as EventListener);
 

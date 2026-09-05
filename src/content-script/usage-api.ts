@@ -196,11 +196,11 @@ async function fetchUsageFromAPIInner(explicitOrgId?: string | null): Promise<bo
       // This is the expected response for free-plan accounts.
       // Mark the API as connected (it responded 200) and try to apply the SSE fallback.
       if (response.ok) {
-        console.debug("[CUT] /usage parse returned null — keys:", Object.keys(data));
+        console.log("[CUT] /usage parse returned null — keys:", Object.keys(data));
         setApiConnected(true);
         const appliedFallback = await applySseFallback(orgId);
         if (appliedFallback) {
-          console.debug("[CUT] Applied SSE session fallback for free-plan /usage response.");
+          console.log("[CUT] Applied SSE session fallback for free-plan /usage response.");
         }
         // Return true: the API is reachable; we just don't have /usage limits.
         return true;
@@ -209,7 +209,7 @@ async function fetchUsageFromAPIInner(explicitOrgId?: string | null): Promise<bo
       return false;
     }
 
-    console.debug("[CUT] /usage parsed — pct:", detected.usagePercent, "remaining:", detected.remainingMessages, "source:", detected.source);
+    console.log("[CUT] /usage parsed — pct:", detected.usagePercent, "remaining:", detected.remainingMessages, "source:", detected.source);
     setApiConnected(true);
     feedDetection(detected);
     return true;

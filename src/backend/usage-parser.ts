@@ -137,7 +137,7 @@ export function parseUsagePayload(data: Record<string, unknown>, orgId?: string)
 
   // Must have at least one recognised format
   if (!hasNewLimits && !hasFiveHour && !hasMaxed) {
-    console.debug('[CUT] parseUsagePayload: no recognised keys. Top-level keys:', Object.keys(data));
+    console.log('[CUT] parseUsagePayload: no recognised keys. Top-level keys:', Object.keys(data));
     return null;
   }
 
@@ -150,9 +150,9 @@ export function parseUsagePayload(data: Record<string, unknown>, orgId?: string)
 
   // ── New format: `limits` array (preferred when present) ──
   if (hasNewLimits) {
-    console.debug('[CUT] parseUsagePayload: limits array =', JSON.stringify(data.limits));
+    console.log('[CUT] parseUsagePayload: limits array =', JSON.stringify(data.limits));
     parseNewLimitsArray(data.limits as Array<Record<string, unknown>>, detected);
-    console.debug('[CUT] parseUsagePayload: after limits parse — usagePercent:', detected.usagePercent, 'resetTimestamp:', detected.resetTimestamp);
+    console.log('[CUT] parseUsagePayload: after limits parse — usagePercent:', detected.usagePercent, 'resetTimestamp:', detected.resetTimestamp);
   }
 
 
