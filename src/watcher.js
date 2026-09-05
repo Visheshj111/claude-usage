@@ -1,9 +1,13 @@
 (function(){
   var orig = window.fetch.bind(window);
   window.fetch = function(i, init) {
+    var url = typeof i === 'string' ? i : i instanceof URL ? i.href : i.url;
+    if (url && /claude\.ai\/api\//.test(url)) {
+      console.log('[CUT] fetch wrapper called for URL: ' + url);
+    }
+    
     var respPromise = orig(i, init);
     try {
-      var url = typeof i === 'string' ? i : i instanceof URL ? i.href : i.url;
       if (url && /claude\.ai\/api\//.test(url)) {
         if (init && init.headers) {
           try {
@@ -81,8 +85,12 @@
   }
 
   function readSSE(r, orgId) {
+    console.log('[CUT] readSSE called for orgId=' + orgId);
     var reader = r.body && r.body.getReader();
-    if (!reader) return;
+    if (!reader) {
+      console.log('[CUT] readSSE failed: no reader');
+      return;
+    }
     var dec = new TextDecoder();
     var buf = '';
     var doneEmitted = false;
