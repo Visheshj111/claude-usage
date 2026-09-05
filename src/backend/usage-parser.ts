@@ -136,7 +136,10 @@ export function parseUsagePayload(data: Record<string, unknown>, orgId?: string)
   const hasMaxed = data.maxed && typeof data.maxed === 'object';
 
   // Must have at least one recognised format
-  if (!hasNewLimits && !hasFiveHour && !hasMaxed) return null;
+  if (!hasNewLimits && !hasFiveHour && !hasMaxed) {
+    console.debug('[CUT] parseUsagePayload: no recognised keys. Top-level keys:', Object.keys(data));
+    return null;
+  }
 
   const detected: DetectedUsage = {
     source: 'network',
@@ -147,8 +150,11 @@ export function parseUsagePayload(data: Record<string, unknown>, orgId?: string)
 
   // ── New format: `limits` array (preferred when present) ──
   if (hasNewLimits) {
+    console.debug('[CUT] parseUsagePayload: limits array =', JSON.stringify(data.limits));
     parseNewLimitsArray(data.limits as Array<Record<string, unknown>>, detected);
+    console.debug('[CUT] parseUsagePayload: after limits parse — usagePercent:', detected.usagePercent, 'resetTimestamp:', detected.resetTimestamp);
   }
+
 
   // ── Old format: top-level `five_hour` / `maxed` fields ──
   // Applied as fallback or supplement (if the new format didn't provide session data)

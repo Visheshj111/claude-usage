@@ -196,6 +196,7 @@ async function fetchUsageFromAPIInner(explicitOrgId?: string | null): Promise<bo
       // This is the expected response for free-plan accounts.
       // Mark the API as connected (it responded 200) and try to apply the SSE fallback.
       if (response.ok) {
+        console.debug("[CUT] /usage parse returned null — keys:", Object.keys(data));
         setApiConnected(true);
         const appliedFallback = await applySseFallback(orgId);
         if (appliedFallback) {
@@ -208,6 +209,7 @@ async function fetchUsageFromAPIInner(explicitOrgId?: string | null): Promise<bo
       return false;
     }
 
+    console.debug("[CUT] /usage parsed — pct:", detected.usagePercent, "remaining:", detected.remainingMessages, "source:", detected.source);
     setApiConnected(true);
     feedDetection(detected);
     return true;
@@ -247,10 +249,13 @@ export function schedulePostCompletionUsageRefresh(orgId: string | null): void {
   for (const t of _postCompletionTimers) clearTimeout(t);
   _postCompletionTimers.clear();
 
-  // Schedule a single refresh after a short delay to allow Claude's backend to update
-  const t = setTimeout(() => {
-    _postCompletionTimers.delete(t);
-    void refreshUsageAndUI(true, orgId);
-  }, POLLING.postCompletionRetries[0]);
-  _postCompletionTimers.add(t);
+  // Schedule ALL retry delays so we catch the backend updating /usage
+  // (Claude's backend may take a few seconds to finalize accounting)
+  for (const delay of POLLING.postCompletionRetries) {
+    const t = setTimeout(() => {
+      _postCompletionTimers.delete(t);
+      void refreshUsageAndUI(true, orgId);
+    }, delay);
+    _postCompletionTimers.add(t);
+  }
 }
