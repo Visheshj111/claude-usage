@@ -114,7 +114,16 @@
           if (!raw) continue;
           try {
             var obj = JSON.parse(raw);
-            if (obj.message_limit || obj.usage_metadata) {
+            console.log('[CUT] watcher parsed event: type=' + obj.type + ' keys=' + Object.keys(obj).join(','));
+            
+            // Fire cut-quota if:
+            // 1. The old nested message_limit object is present (original format)
+            // 2. OR the event type is "message_limit" — catches new format where the
+            //    nested field is null but windows/utilization data is at the top level
+            // 3. OR usage_metadata is present (another legacy path)
+            var isMessageLimit = !!(obj.message_limit) || obj.type === 'message_limit';
+            if (isMessageLimit || obj.usage_metadata) {
+              console.log('[CUT] watcher: firing cut-quota. type=' + obj.type + ' has_nested_ml=' + !!obj.message_limit + ' has_windows=' + !!obj.windows);
               window.dispatchEvent(new CustomEvent('cut-quota', {detail: obj}));
             }
             // Capture token usage from message_start event
