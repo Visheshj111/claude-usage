@@ -252,26 +252,26 @@ export function interceptXHR(onQuota: QuotaCallback): () => void {
 /**
  * Extract quota from a Claude-specific JSON body.
  *
- * Claude error response (rate limited):
+ * NEW format (2026-08-20) — `message_limit` object within an SSE event:
  * {
- *   "type": "error",
- *   "error": { "type": "overloaded_error", "message": "..." },
- *   "message_limit": {
- *     "type": "within_5hour_window",
- *     "resetsAt": "2024-01-01T14:00:00Z"
+ *   "type": "exceeded_limit" | "within_limit",
+ *   "resetsAt": <unix seconds>,
+ *   "representativeClaim": "five_hour",
+ *   "windows": {
+ *     "5h": { "status": "exceeded_limit"|"within_limit", "resets_at": <unix seconds>, "utilization": 0.0-1.0 },
+ *     "7d": { "status": "within_limit", "resets_at": <unix seconds>, "utilization": 0.0-1.0 }
  *   }
  * }
  *
- * Claude normal response may include:
+ * OLD format — kept for backward compat:
  * {
- *   "usage_metadata": {
- *     "remaining_messages": 38,
- *     "message_limit": 45,
- *     "window_reset_at": "2024-01-01T14:00:00Z"
- *   }
+ *   "message_limit": { "type": "within_5hour_window", "resetsAt": "2024-01-01T14:00:00Z" }
  * }
  *
- * Also handles standard ratelimit fields as fallback.
+ * Normal responses may still include:
+ * {
+ *   "usage_metadata": { "remaining_messages": 38, "message_limit": 45, "window_reset_at": "..." }
+ * }
  */
 function extractFromClaudeJson(body: unknown): NetworkQuota | null {
   if (!body || typeof body !== "object") return null;
@@ -280,40 +280,61 @@ function extractFromClaudeJson(body: unknown): NetworkQuota | null {
   let found = false;
   const obj = body as Record<string, unknown>;
 
-  // ── Claude's message_limit error field ──
-  // Sent when the user hits the rate limit
+  // ── Claude's message_limit field (SSE stream) ──
+  // New format (2026-08-20): has a `windows` object with '5h' and '7d' entries.
+  // Old format: flat object with resetsAt ISO string and type string.
   if (obj.message_limit && typeof obj.message_limit === "object") {
     const ml = obj.message_limit as Record<string, unknown>;
 
-    if (ml.resetsAt) {
-      const ts = new Date(String(ml.resetsAt)).getTime();
-      if (!isNaN(ts)) {
-        quota.reset = ts;
-        quota.remaining = 0; // hit the wall
-        found = true;
+    // ── NEW FORMAT: windows map ──
+    const windows = ml.windows as Record<string, Record<string, unknown>> | undefined;
+    if (windows && typeof windows === "object") {
+      const win5h = windows["5h"];
+      if (win5h && typeof win5h === "object" && typeof win5h.resets_at === "number") {
+        const ts = (win5h.resets_at as number) * 1000; // unix seconds → ms
+        if (!isNaN(ts) && ts > 0) {
+          quota.reset = ts;
+          found = true;
+        }
+        if (win5h.status === "exceeded_limit") {
+          quota.remaining = 0;
+          found = true;
+        } else if (typeof win5h.utilization === "number") {
+          // utilization 0.0–1.0 → remaining is approximate; surface it via reset only
+          // (NetworkQuota has no percent field; full percent goes via DetectedUsage in message-listener.ts)
+          found = true;
+        }
+        // Limit type: windows format is always the soft 5h window
+        quota.limitType = "soft";
       }
-    }
+    } else {
+      // ── OLD FORMAT: flat resetsAt ──
+      if (ml.resetsAt || ml.resets_at) {
+        const raw = ml.resetsAt ?? ml.resets_at;
+        const ts = typeof raw === "number"
+          ? (raw > 1e10 ? raw : raw * 1000)  // unix seconds vs ms
+          : new Date(String(raw)).getTime(); // ISO string
+        if (!isNaN(ts) && ts > 0) {
+          quota.reset = ts;
+          quota.remaining = 0;
+          found = true;
+        }
+      }
 
-    if (ml.resets_at) {
-      const ts = new Date(String(ml.resets_at)).getTime();
-      if (!isNaN(ts)) {
-        quota.reset = ts;
+      // Old type strings
+      const mlType = String(ml.type || "").toLowerCase();
+      if (mlType === "maxed") {
+        quota.limitType = "hard";
+        if (quota.reset) quota.hardLimitResetAt = quota.reset;
+        found = true;
+      } else if (mlType === "within_5hour_window" || mlType === "within_limit") {
+        quota.limitType = "soft";
+        found = true;
+      } else if (mlType === "exceeded_limit") {
+        quota.limitType = "soft";
         quota.remaining = 0;
         found = true;
       }
-    }
-
-    // Detect hard limit (cooldown) vs soft limit (5h window)
-    const mlType = String(ml.type || "").toLowerCase();
-    if (mlType === "maxed") {
-      quota.limitType = "hard";
-      if (quota.reset) {
-        quota.hardLimitResetAt = quota.reset;
-      }
-      found = true;
-    } else if (mlType === "within_5hour_window") {
-      quota.limitType = "soft";
-      found = true;
     }
   }
 

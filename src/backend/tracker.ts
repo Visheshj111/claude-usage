@@ -61,6 +61,7 @@ export function handleNetworkQuota(quota: NetworkQuota): void {
     const used = quota.limit - quota.remaining;
     detected.usagePercent = Math.round((used / quota.limit) * 100);
     detected.remainingMessages = quota.remaining;
+    detected.sessionLimit = quota.limit;
 
     if (quota.remaining <= 0) {
       detected.isRateLimited = true;

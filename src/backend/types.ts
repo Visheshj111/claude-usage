@@ -65,6 +65,8 @@ export interface UsageState {
   weeklySonnetUsage: WeeklyUsage | null;
   /** Weekly Opus usage (if separately tracked) */
   weeklyOpusUsage: WeeklyUsage | null;
+  /** Weekly Fable usage (if separately tracked) */
+  weeklyFableUsage: WeeklyUsage | null;
   /** Whether currently in Anthropic's peak hours */
   isPeakHours: boolean;
   /** When the peak/off-peak period transitions (ms timestamp) */
@@ -91,6 +93,7 @@ export interface DetectedUsage {
   weeklyUsage?: WeeklyUsage;
   weeklySonnetUsage?: WeeklyUsage;
   weeklyOpusUsage?: WeeklyUsage;
+  weeklyFableUsage?: WeeklyUsage;
   isPeakHours?: boolean;
   peakHoursTransitionAt?: number;
 }
@@ -146,6 +149,7 @@ export function emptyUsage(source: DataSource = "unknown"): UsageState {
     weeklyUsage: null,
     weeklySonnetUsage: null,
     weeklyOpusUsage: null,
+    weeklyFableUsage: null,
     isPeakHours: false,
     peakHoursTransitionAt: null,
   };

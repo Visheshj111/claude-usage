@@ -31,6 +31,7 @@ function makeState(overrides: Partial<UsageState> = {}): UsageState {
     weeklyUsage: null,
     weeklySonnetUsage: null,
     weeklyOpusUsage: null,
+    weeklyFableUsage: null,
     isPeakHours: false,
     peakHoursTransitionAt: null,
     ...overrides,

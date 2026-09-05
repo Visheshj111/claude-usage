@@ -42,12 +42,19 @@ export async function getStoredOrgId(): Promise<string | null> {
 }
 
 async function _fetchAndParseUsage(orgId: string): Promise<Record<string, unknown> | null> {
+  const timeSince = Date.now() - _lastBgFetchAt;
+  if (timeSince < POLLING.bgFetchCooldown) {
+    return null; // Debounce: skip fetch if we already fetched recently
+  }
+  
   const resp = await fetch(`${URLS.apiBase}/${orgId}/usage`, {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
   });
-  if (!resp.ok && resp.status !== 403 && resp.status !== 429) return null;
+  // Always record the fetch timestamp to prevent retry storms,
+  // even if the response is an error or parsing fails.
   _lastBgFetchAt = Date.now();
+  if (!resp.ok && resp.status !== 403 && resp.status !== 429) return null;
   let data: Record<string, unknown> | null = null;
   try {
     data = await resp.json();

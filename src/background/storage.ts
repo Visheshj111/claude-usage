@@ -342,6 +342,7 @@ export async function getAllData(): Promise<Record<string, unknown>> {
     weeklyUsage: backendState.weeklyUsage,
     weeklySonnetUsage: backendState.weeklySonnetUsage,
     weeklyOpusUsage: backendState.weeklyOpusUsage,
+    weeklyFableUsage: backendState.weeklyFableUsage,
     isPeakHours: backendState.isPeakHours,
     peakHoursTransitionAt: backendState.peakHoursTransitionAt,
     lastFetchedAt: (await chrome.storage.local.get('lastFetchedAt')).lastFetchedAt || null,

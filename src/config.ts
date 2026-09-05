@@ -12,6 +12,14 @@ export const NOTIFICATIONS = {
   lowRemaining: [5, 1],
 };
 
+export const ESTIMATED_CAPS: Record<string, { session: number }> = {
+  free: { session: 15 },
+  pro: { session: 45 },
+  team: { session: 100 },
+  max_5x: { session: 225 },
+  max_20x: { session: 900 }
+};
+
 export const POLLING = {
   /** DOM/banner scan interval (ms) */
   scan: 15_000,
@@ -87,6 +95,7 @@ export const DEFAULT_PEAK_HOURS = {
 export default {
   THRESHOLDS,
   NOTIFICATIONS,
+  ESTIMATED_CAPS,
   POLLING,
   SESSION,
   STORAGE,

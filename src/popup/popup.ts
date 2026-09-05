@@ -1,5 +1,6 @@
 export {};
 import { showExportDialog } from "../shared/export-dialog";
+import { ESTIMATED_CAPS } from "../config";
 
 const _themeMedia = window.matchMedia('(prefers-color-scheme: dark)');
 let _themeMode = 'auto';
@@ -101,7 +102,7 @@ async function render(): Promise<void> {
     remaining, session, settings, conversations,
     source, resetIn, resetTimestamp, apiConnected, apiErrorStatus,
     limitType, hardLimitResetAt, orgId,
-    planTier, weeklyUsage, weeklySonnetUsage, weeklyOpusUsage,
+    planTier, weeklyUsage, weeklySonnetUsage, weeklyOpusUsage, weeklyFableUsage,
     confidence
   } = result;
 
@@ -126,8 +127,9 @@ async function render(): Promise<void> {
   renderWeekly(weeklyUsage, 'weekly-bar', 'weekly-nums');
   renderWeekly(weeklySonnetUsage, 'weekly-sonnet-bar', 'weekly-sonnet-nums', 'weekly-sonnet-row');
   renderWeekly(weeklyOpusUsage, 'weekly-opus-bar', 'weekly-opus-nums', 'weekly-opus-row');
+  renderWeekly(weeklyFableUsage, 'weekly-fable-bar', 'weekly-fable-nums', 'weekly-fable-row');
   const weeklyGroup = document.getElementById('weekly-group');
-  if (weeklyGroup) weeklyGroup.style.display = weeklyUsage ? '' : 'none';
+  if (weeklyGroup) weeklyGroup.style.display = (weeklyUsage || weeklySonnetUsage || weeklyOpusUsage || weeklyFableUsage) ? '' : 'none';
 
   const sourceEl = document.getElementById('source-badge');
   if (sourceEl) {
@@ -215,11 +217,16 @@ async function render(): Promise<void> {
     }
   }
 
-  const msgsTotal: number | null = sessionLimit || remaining?.messagesTotal || null;
+  const cap = planTier && planTier !== 'unknown' && ESTIMATED_CAPS[planTier]?.session 
+    ? ESTIMATED_CAPS[planTier].session 
+    : (planTier === 'pro' ? 45 : 15);
+  
+  const msgsTotal: number | null = sessionLimit || remaining?.messagesTotal || (sessionPct != null ? cap : null);
   const apiRemaining: number | null = typeof remaining?.messages === 'number' ? remaining.messages : null;
-  const msgsUsed: number = sessionMessagesUsed ?? (apiRemaining !== null ? Math.max(0, (msgsTotal ?? 0) - apiRemaining) : 0);
+  const pct: number = sessionPct != null ? sessionPct : msgsTotal ? Math.min(100, Math.round(((sessionMessagesUsed ?? 0) / msgsTotal) * 100)) : 0;
+  
+  const msgsUsed: number = sessionMessagesUsed ?? (apiRemaining !== null && msgsTotal !== null ? Math.max(0, msgsTotal - apiRemaining) : (sessionPct != null && msgsTotal !== null ? Math.round(msgsTotal * (sessionPct / 100)) : 0));
   const msgsRemaining = apiRemaining ?? (msgsTotal !== null ? Math.max(0, msgsTotal - msgsUsed) : null);
-  const pct: number = sessionPct != null ? sessionPct : msgsTotal ? Math.min(100, Math.round((msgsUsed / msgsTotal) * 100)) : 0;
   const tokensUsed: number = (remaining?.tokens != null) ? (remaining.tokensTotal || 0) - remaining.tokens : 0;
   const tokensTotal: number | null = remaining?.tokensTotal || null;
   const tokenPct = tokensTotal ? Math.min(100, Math.round((tokensUsed / tokensTotal) * 100)) : 0;
@@ -385,14 +392,18 @@ function renderWeekly(
   const nums = document.getElementById(numsId);
   const row = rowId ? document.getElementById(rowId) : null;
 
-  if (!weekly?.maxMessages) {
+  // Show the row if we have either absolute counts OR a percentage
+  const hasData = weekly && (weekly.maxMessages || weekly.usagePercent != null);
+  if (!hasData) {
     if (bar) bar.style.width = '0%';
     if (nums) nums.textContent = '';
     if (row) row.style.display = 'none';
     return;
   }
 
-  const pct = weekly.usagePercent ?? Math.round(((weekly.messagesUsed ?? 0) / weekly.maxMessages) * 100);
+  const pct = weekly.usagePercent ?? (weekly.maxMessages
+    ? Math.round(((weekly.messagesUsed ?? 0) / weekly.maxMessages) * 100)
+    : 0);
   if (bar) {
     bar.style.width = pct + '%';
     bar.className = 'prog-fill';
@@ -400,7 +411,14 @@ function renderWeekly(
     else if (pct >= 60) bar.classList.add('warn');
     else bar.classList.add('safe');
   }
-  if (nums) nums.textContent = `${formatNum(weekly.messagesUsed ?? 0)} / ${formatNum(weekly.maxMessages)}`;
+  if (nums) {
+    if (weekly.maxMessages) {
+      nums.textContent = `${formatNum(weekly.messagesUsed ?? 0)} / ${formatNum(weekly.maxMessages)}`;
+    } else {
+      // New format: only percentage available
+      nums.textContent = `${Math.round(pct)}%`;
+    }
+  }
   if (row) row.style.display = '';
 }
 

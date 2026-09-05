@@ -189,6 +189,7 @@ export async function init(): Promise<void> {
           if (incomingState.weeklyUsage)                det.weeklyUsage = incomingState.weeklyUsage;
           if (incomingState.weeklySonnetUsage)          det.weeklySonnetUsage = incomingState.weeklySonnetUsage;
           if (incomingState.weeklyOpusUsage)            det.weeklyOpusUsage = incomingState.weeklyOpusUsage;
+          if (incomingState.weeklyFableUsage)            det.weeklyFableUsage = incomingState.weeklyFableUsage;
           if (incomingState.isPeakHours != null)        det.isPeakHours = incomingState.isPeakHours;
           if (incomingState.peakHoursTransitionAt != null) det.peakHoursTransitionAt = incomingState.peakHoursTransitionAt;
           if (incomingState.orgId && isUsableOrgId(incomingState.orgId)) rememberBgOrgId(incomingState.orgId);

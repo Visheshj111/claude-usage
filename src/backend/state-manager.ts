@@ -119,6 +119,10 @@ export function feedDetection(detected: DetectedUsage): UsageState {
     currentState.weeklyOpusUsage = detected.weeklyOpusUsage;
   }
 
+  if (detected.weeklyFableUsage !== undefined) {
+    currentState.weeklyFableUsage = detected.weeklyFableUsage;
+  }
+
   if (detected.isPeakHours !== undefined) {
     currentState.isPeakHours = detected.isPeakHours;
   }
