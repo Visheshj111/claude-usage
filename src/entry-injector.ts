@@ -19,35 +19,7 @@
  */
 
 function injectWatcher(): void {
-  console.error('[CUT] INJECTOR: Attempting to inject watcher.js');
-  try {
-    const script = document.createElement('script');
-    script.src = chrome.runtime.getURL('dist/watcher.js');
-    script.id = 'cut-watcher';
-    script.onload = () => {
-      console.error('[CUT] INJECTOR: watcher.js onload fired!');
-      script.remove();
-    };
-    script.onerror = (e) => {
-      console.error('[CUT] INJECTOR: watcher.js failed to load!', e);
-    };
-    document.documentElement.appendChild(script);
-    console.error('[CUT] INJECTOR: appended script tag to documentElement');
-  } catch(e) {
-    console.error('[CUT] INJECTOR: synchronous inject failed', e);
-    document.addEventListener('DOMContentLoaded', () => {
-      try {
-        const s = document.createElement('script');
-        s.src = chrome.runtime.getURL('dist/watcher.js');
-        s.id = 'cut-watcher';
-        s.onload = () => s.remove();
-        document.documentElement.appendChild(s);
-        console.error('[CUT] INJECTOR: appended script tag to documentElement on DOMContentLoaded');
-      } catch(e) {
-        console.error('[CUT] INJECTOR: DOMContentLoaded inject failed', e);
-      }
-    });
-  }
+  // Disabled: using Manifest V3 world: "MAIN" instead to ensure we run before Claude caches fetch.
 }
 
 injectWatcher();
