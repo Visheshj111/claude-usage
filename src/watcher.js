@@ -12,7 +12,7 @@
   var orig = window.fetch;
   window.fetch = async function (i, init) {
     var url = typeof i === 'string' ? i : i instanceof URL ? i.href : i.url;
-    var isClaudeApi = url && /claude\.ai\/api\//.test(url);
+    var isClaudeApi = url && /\/api\//.test(url);
 
     if (isClaudeApi) {
       debugLog('fetch wrapper called for URL: ' + url);
