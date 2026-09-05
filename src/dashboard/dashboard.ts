@@ -179,7 +179,11 @@ async function renderUsageSquares(): Promise<void> {
     const count = dataMap.get(dateKey) || 0;
     const level = heatLevel(count, maxDaily);
     const label = `${formatHeatmapDate(dateKey)} - ${formatNum(count)} messages`;
-    cells.push(`<div class="heat-cell level-${level}" style="width: 14px; height: 14px; border-radius: 2px;" title="${esc(label)}" aria-label="${esc(label)}"></div>`);
+    let bgClass = 'bg-accent';
+    if (level === 1) bgClass = 'bg-primary/30';
+    else if (level === 2) bgClass = 'bg-primary/60';
+    else if (level >= 3) bgClass = 'bg-primary';
+    cells.push(`<div class="${bgClass}" style="width: 14px; height: 14px; border-radius: 2px;" title="${esc(label)}" aria-label="${esc(label)}"></div>`);
   }
 
   grid.style.display = 'grid';
