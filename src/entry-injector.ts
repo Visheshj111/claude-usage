@@ -19,7 +19,23 @@
  */
 
 function injectWatcher(): void {
-  // disabled in favor of manifest v3 world: "MAIN" execution
+  try {
+    const script = document.createElement('script');
+    script.src = chrome.runtime.getURL('dist/watcher.js');
+    script.id = 'cut-watcher';
+    script.onload = () => script.remove();
+    document.documentElement.appendChild(script);
+  } catch {
+    document.addEventListener('DOMContentLoaded', () => {
+      try {
+        const s = document.createElement('script');
+        s.src = chrome.runtime.getURL('dist/watcher.js');
+        s.id = 'cut-watcher';
+        s.onload = () => s.remove();
+        document.documentElement.appendChild(s);
+      } catch {}
+    });
+  }
 }
 
 injectWatcher();

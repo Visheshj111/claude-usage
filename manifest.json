@@ -22,7 +22,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["dist/inpage/inpage.css", "dist/dashboard/*", "dist/theme-boot.js"],
+      "resources": ["dist/inpage/inpage.css", "dist/watcher.js", "dist/dashboard/*", "dist/theme-boot.js"],
       "matches": ["https://claude.ai/*"]
     }
   ],
@@ -34,12 +34,6 @@
     {
       "matches": ["https://claude.ai/*"],
       "js": ["dist/injector.js"],
-      "run_at": "document_start"
-    },
-    {
-      "matches": ["https://claude.ai/*"],
-      "js": ["dist/watcher.js"],
-      "world": "MAIN",
       "run_at": "document_start"
     },
     {

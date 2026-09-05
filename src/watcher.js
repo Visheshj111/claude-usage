@@ -1,24 +1,24 @@
-(function(){
+(function () {
   function debugLog(msg) {
     try {
       window.postMessage({ type: 'cut-debug', detail: msg }, window.location.origin);
-    } catch(e) {}
+    } catch (e) { }
   }
 
   debugLog('WATCHER INIT: script loaded into MAIN world');
 
   var orig = window.fetch;
-  window.fetch = async function(i, init) {
+  window.fetch = async function (i, init) {
     var url = typeof i === 'string' ? i : i instanceof URL ? i.href : i.url;
     var isClaudeApi = url && /claude\.ai\/api\//.test(url);
-    
+
     if (isClaudeApi) {
       debugLog('fetch wrapper called for URL: ' + url);
       if (init && init.headers) {
         try {
           var h = new Headers(init.headers);
           var extracted = {};
-          h.forEach(function(val, key) {
+          h.forEach(function (val, key) {
             var lower = key.toLowerCase();
             if (lower.indexOf('anthropic') !== -1 || lower === 'baggage') {
               extracted[key] = val;
@@ -27,7 +27,7 @@
           if (Object.keys(extracted).length > 0) {
             window.postMessage({ type: 'cut-api-headers', detail: extracted }, window.location.origin);
           }
-        } catch(e) {}
+        } catch (e) { }
       }
     }
 
@@ -48,11 +48,11 @@
         } else if (ct.indexOf('application/json') !== -1) {
           readJSON(resp.clone(), orgId, url);
         }
-      } catch(e) {
+      } catch (e) {
         debugLog('Error processing response: ' + e.toString());
       }
     }
-    
+
     return resp;
   };
 
@@ -75,7 +75,7 @@
     if (orgId) {
       window.__cutLastCompletionOrgId = orgId;
       window.__cutCompletionTimestamp = Date.now();
-      window.postMessage({ type: 'cut-conversation-synced', detail: {orgId: orgId, url: url} }, window.location.origin);
+      window.postMessage({ type: 'cut-conversation-synced', detail: { orgId: orgId, url: url } }, window.location.origin);
     }
   }
 
@@ -86,14 +86,16 @@
     var outputTokens = typeof usage.output_tokens === 'number' ? usage.output_tokens : 0;
     var cacheCreation = typeof usage.cache_creation_input_tokens === 'number' ? usage.cache_creation_input_tokens : 0;
     var cacheRead = typeof usage.cache_read_input_tokens === 'number' ? usage.cache_read_input_tokens : 0;
-    window.postMessage({ type: 'cut-message-stats', detail: {
-      inputTokens: inputTokens,
-      outputTokens: outputTokens,
-      cacheCreationTokens: cacheCreation,
-      cacheReadTokens: cacheRead,
-      totalTokens: inputTokens + outputTokens,
-      timestamp: Date.now()
-    }}, window.location.origin);
+    window.postMessage({
+      type: 'cut-message-stats', detail: {
+        inputTokens: inputTokens,
+        outputTokens: outputTokens,
+        cacheCreationTokens: cacheCreation,
+        cacheReadTokens: cacheRead,
+        totalTokens: inputTokens + outputTokens,
+        timestamp: Date.now()
+      }
+    }, window.location.origin);
   }
 
   function readSSE(r, orgId) {
@@ -114,13 +116,13 @@
     }
 
     function pump() {
-      return reader.read().then(function(_a) {
+      return reader.read().then(function (_a) {
         var done = _a.done, value = _a.value;
         if (done) {
           markDone();
           return;
         }
-        buf += dec.decode(value, {stream: true});
+        buf += dec.decode(value, { stream: true });
         var lines = buf.split('\n');
         buf = lines.pop() || '';
         for (var i = 0; i < lines.length; i++) {
@@ -135,7 +137,7 @@
           try {
             var obj = JSON.parse(raw);
             console.log('[CUT] watcher parsed event: type=' + obj.type + ' keys=' + Object.keys(obj).join(','));
-            
+
             // Fire cut-quota if:
             // 1. The old nested message_limit object is present (original format)
             // 2. OR the event type is "message_limit" — catches new format where the
@@ -150,22 +152,22 @@
             if (obj.type === 'message_start' && obj.message && obj.message.usage) {
               emitMessageStats(obj.message.usage);
             }
-          } catch(e) {}
+          } catch (e) { }
         }
         return pump();
-      }).catch(function(){ markDone(); });
+      }).catch(function () { markDone(); });
     }
     return pump();
   }
 
   function readJSON(r, orgId, url) {
-    r.json().then(function(obj) {
+    r.json().then(function (obj) {
       if (obj && (obj.message_limit || obj.usage_metadata)) {
         window.postMessage({ type: 'cut-quota', detail: obj }, window.location.origin);
       }
       if (isConversationSyncUrl(url)) {
         emitConversationSynced(orgId, url);
       }
-    }).catch(function(){});
+    }).catch(function () { });
   }
 })();
