@@ -1,10 +1,12 @@
 (function () {
+  console.error('[CUT] WATCHER SCRIPT EVALUATING!');
   function debugLog(msg) {
     try {
       window.postMessage({ type: 'cut-debug', detail: msg }, window.location.origin);
     } catch (e) { }
   }
 
+  console.error('[CUT] WATCHER INIT: script loaded into MAIN world');
   debugLog('WATCHER INIT: script loaded into MAIN world');
 
   var orig = window.fetch;
