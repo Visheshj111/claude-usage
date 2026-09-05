@@ -1,7 +1,7 @@
 (function(){
   function debugLog(msg) {
     try {
-      window.dispatchEvent(new CustomEvent('cut-debug', { detail: msg }));
+      window.postMessage({ type: 'cut-debug', detail: msg }, window.location.origin);
     } catch(e) {}
   }
 
@@ -25,7 +25,7 @@
             }
           });
           if (Object.keys(extracted).length > 0) {
-            window.dispatchEvent(new CustomEvent('cut-api-headers', { detail: extracted }));
+            window.postMessage({ type: 'cut-api-headers', detail: extracted }, window.location.origin);
           }
         } catch(e) {}
       }
@@ -38,7 +38,7 @@
         var orgMatch = url.match(/\/api\/organizations\/([^/]+)/);
         var orgId = orgMatch && orgMatch[1];
         if (orgId) {
-          window.dispatchEvent(new CustomEvent('cut-org-id', {detail: orgId}));
+          window.postMessage({ type: 'cut-org-id', detail: orgId }, window.location.origin);
         }
 
         var ct = resp.headers.get('content-type') || '';
@@ -67,7 +67,7 @@
     if (orgId) {
       window.__cutLastCompletionOrgId = orgId;
       window.__cutCompletionTimestamp = Date.now();
-      window.dispatchEvent(new CustomEvent('cut-completion-done', {detail: orgId}));
+      window.postMessage({ type: 'cut-completion-done', detail: orgId }, window.location.origin);
     }
   }
 
@@ -75,7 +75,7 @@
     if (orgId) {
       window.__cutLastCompletionOrgId = orgId;
       window.__cutCompletionTimestamp = Date.now();
-      window.dispatchEvent(new CustomEvent('cut-conversation-synced', {detail: {orgId: orgId, url: url}}));
+      window.postMessage({ type: 'cut-conversation-synced', detail: {orgId: orgId, url: url} }, window.location.origin);
     }
   }
 
@@ -86,16 +86,14 @@
     var outputTokens = typeof usage.output_tokens === 'number' ? usage.output_tokens : 0;
     var cacheCreation = typeof usage.cache_creation_input_tokens === 'number' ? usage.cache_creation_input_tokens : 0;
     var cacheRead = typeof usage.cache_read_input_tokens === 'number' ? usage.cache_read_input_tokens : 0;
-    window.dispatchEvent(new CustomEvent('cut-message-stats', {
-      detail: {
-        inputTokens: inputTokens,
-        outputTokens: outputTokens,
-        cacheCreationTokens: cacheCreation,
-        cacheReadTokens: cacheRead,
-        totalTokens: inputTokens + outputTokens,
-        timestamp: Date.now()
-      }
-    }));
+    window.postMessage({ type: 'cut-message-stats', detail: {
+      inputTokens: inputTokens,
+      outputTokens: outputTokens,
+      cacheCreationTokens: cacheCreation,
+      cacheReadTokens: cacheRead,
+      totalTokens: inputTokens + outputTokens,
+      timestamp: Date.now()
+    }}, window.location.origin);
   }
 
   function readSSE(r, orgId) {
@@ -146,7 +144,7 @@
             var isMessageLimit = !!(obj.message_limit) || obj.type === 'message_limit';
             if (isMessageLimit || obj.usage_metadata) {
               console.log('[CUT] watcher: firing cut-quota. type=' + obj.type + ' has_nested_ml=' + !!obj.message_limit + ' has_windows=' + !!obj.windows);
-              window.dispatchEvent(new CustomEvent('cut-quota', {detail: obj}));
+              window.postMessage({ type: 'cut-quota', detail: obj }, window.location.origin);
             }
             // Capture token usage from message_start event
             if (obj.type === 'message_start' && obj.message && obj.message.usage) {
@@ -163,7 +161,7 @@
   function readJSON(r, orgId, url) {
     r.json().then(function(obj) {
       if (obj && (obj.message_limit || obj.usage_metadata)) {
-        window.dispatchEvent(new CustomEvent('cut-quota', {detail: obj}));
+        window.postMessage({ type: 'cut-quota', detail: obj }, window.location.origin);
       }
       if (isConversationSyncUrl(url)) {
         emitConversationSynced(orgId, url);

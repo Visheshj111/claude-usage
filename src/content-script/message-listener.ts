@@ -36,72 +36,80 @@ try {
 
 // ── Page-context watcher events ──
 
-// cut-completion-done: SSE stream fully consumed — Claude has finished responding.
-window.addEventListener("cut-completion-done", ((e: CustomEvent<string>) => {
-  schedulePostCompletionUsageRefresh(e.detail || null);
-}) as EventListener);
-
-window.addEventListener("cut-conversation-synced", ((e: CustomEvent<{ orgId?: string }>) => {
-  schedulePostCompletionUsageRefresh(e.detail?.orgId || null);
-}) as EventListener);
-
-window.addEventListener('cut-debug', ((e: CustomEvent<string>) => {
-  console.log('[CUT] WATCHER:', e.detail);
-}) as EventListener);
-
-window.addEventListener("cut-quota", ((e: CustomEvent) => {
-  const data = e.detail;
+// Pass through completion done events to trigger full refresh
+window.addEventListener("message", ((e: MessageEvent) => {
+  if (e.source !== window || e.origin !== window.location.origin) return;
+  const data = e.data;
   if (!data || typeof data !== "object") return;
 
-  console.log("[CUT] cut-quota event received. Has message_limit:", !!data.message_limit, "Has windows:", !!(data.message_limit as any)?.windows);
+  switch (data.type) {
+    case "cut-completion-done":
+    case "cut-conversation-synced":
+      schedulePostCompletionUsageRefresh(data.detail?.orgId || data.detail || null);
+      break;
 
-  // Prefer the richer DetectedUsage path (handles new windows format + weekly data)
-  const detected = mapEventToDetected(data);
-  if (detected) {
-    console.log("[CUT] cut-quota → new windows format. pct:", detected.usagePercent, "resetTs:", detected.resetTimestamp, "weekly:", detected.weeklyUsage?.usagePercent);
-    feedDetection(detected);
-    // Persist SSE snapshot for free-plan fallback (async, fire-and-forget).
-    // orgId may not be in `detected` (SSE payload doesn't carry it), fall back to state.
-    const snapshotOrgId = detected.orgId ?? getState().orgId;
-    if (snapshotOrgId) {
-      void storeSseSnapshot(snapshotOrgId, detected);
+    case "cut-debug":
+      console.log("[CUT] WATCHER:", data.detail);
+      break;
+
+    case "cut-quota": {
+      const detail = data.detail;
+      if (!detail || typeof detail !== "object") return;
+
+      console.log("[CUT] cut-quota event received. Has message_limit:", !!detail.message_limit, "Has windows:", !!(detail.message_limit as any)?.windows);
+
+      // Prefer the richer DetectedUsage path (handles new windows format + weekly data)
+      const detected = mapEventToDetected(detail);
+      if (detected) {
+        console.log("[CUT] cut-quota → new windows format. pct:", detected.usagePercent, "resetTs:", detected.resetTimestamp, "weekly:", detected.weeklyUsage?.usagePercent);
+        feedDetection(detected);
+        // Persist SSE snapshot for free-plan fallback (async, fire-and-forget).
+        // orgId may not be in `detected` (SSE payload doesn't carry it), fall back to state.
+        const snapshotOrgId = detected.orgId ?? getState().orgId;
+        if (snapshotOrgId) {
+          void storeSseSnapshot(snapshotOrgId, detected);
+        }
+        void refreshUsageAndUI(false);
+        return;
+      }
+
+      // Legacy path: usage_metadata only (no message_limit in this event)
+      const quota = mapEventToQuota(detail);
+      if (quota) {
+        console.log("[CUT] cut-quota → legacy quota. remaining:", quota.remaining, "reset:", quota.reset);
+        handleNetworkQuota(quota);
+        void refreshUsageAndUI(false);
+      } else {
+        console.log("[CUT] cut-quota → no usable data extracted from event.");
+      }
+      break;
     }
-    void refreshUsageAndUI(false);
-    return;
-  }
 
-  // Legacy path: usage_metadata only (no message_limit in this event)
-  const quota = mapEventToQuota(data);
-  if (quota) {
-    console.log("[CUT] cut-quota → legacy quota. remaining:", quota.remaining, "reset:", quota.reset);
-    handleNetworkQuota(quota);
-    void refreshUsageAndUI(false);
-  } else {
-    console.log("[CUT] cut-quota → no usable data extracted from event.");
+    case "cut-message-stats": {
+      if (data.detail && typeof data.detail.totalTokens === "number") {
+        setLastMessageStats(data.detail);
+        const ctxRow = document.getElementById("cut-ctx-row");
+        if (ctxRow) {
+          const s = lastMessageStats!;
+          const totalToks = s.totalTokens;
+          const cachedToks = s.cacheReadTokens;
+          const cachedPct = totalToks > 0 ? Math.round((cachedToks / totalToks) * 100) : 0;
+          ctxRow.style.display = "";
+          const lenEl = document.getElementById("cut-ctx-length");
+          const costEl = document.getElementById("cut-ctx-cost");
+          const cachedEl = document.getElementById("cut-ctx-cached");
+          if (lenEl) lenEl.textContent = formatNum(totalToks) + " tok";
+          if (costEl) costEl.textContent = formatNum(Math.round(totalToks * 0.003)) + " cr";
+          if (cachedEl) cachedEl.textContent = cachedPct > 0 ? cachedPct + "% cached" : "0%";
+        }
+      }
+      break;
+    }
   }
 }) as EventListener);
 
 
-// cut-message-stats: emitted by watcher.js from SSE message_start events.
-window.addEventListener("cut-message-stats", ((e: CustomEvent<{ inputTokens: number; outputTokens: number; cacheCreationTokens: number; cacheReadTokens: number; totalTokens: number; timestamp: number }>) => {
-  if (e.detail && typeof e.detail.totalTokens === "number") {
-    setLastMessageStats(e.detail);
-    const ctxRow = document.getElementById("cut-ctx-row");
-    if (ctxRow) {
-      const s = lastMessageStats!;
-      const totalToks = s.totalTokens;
-      const cachedToks = s.cacheReadTokens;
-      const cachedPct = totalToks > 0 ? Math.round((cachedToks / totalToks) * 100) : 0;
-      ctxRow.style.display = "";
-      const lenEl = document.getElementById("cut-ctx-length");
-      const costEl = document.getElementById("cut-ctx-cost");
-      const cachedEl = document.getElementById("cut-ctx-cached");
-      if (lenEl) lenEl.textContent = formatNum(totalToks) + " tok";
-      if (costEl) costEl.textContent = formatNum(Math.round(totalToks * 0.003)) + " cr";
-      if (cachedEl) cachedEl.textContent = cachedPct > 0 ? cachedPct + "% cached" : "0%";
-    }
-  }
-}) as EventListener);
+// End of file
 
 /**
  * Parse one window entry from the new message_limit.windows map.
