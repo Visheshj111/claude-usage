@@ -1,12 +1,10 @@
 (function () {
-  console.error('[CUT] WATCHER SCRIPT EVALUATING!');
   function debugLog(msg) {
     try {
       window.postMessage({ type: 'cut-debug', detail: msg }, window.location.origin);
     } catch (e) { }
   }
 
-  console.error('[CUT] WATCHER INIT: script loaded into MAIN world');
   debugLog('WATCHER INIT: script loaded into MAIN world');
 
   var orig = window.fetch;
@@ -101,10 +99,10 @@
   }
 
   function readSSE(r, orgId) {
-    console.log('[CUT] readSSE called for orgId=' + orgId);
+    debugLog('readSSE called for orgId=' + orgId);
     var reader = r.body && r.body.getReader();
     if (!reader) {
-      console.log('[CUT] readSSE failed: no reader');
+      debugLog('readSSE failed: no reader');
       return;
     }
     var dec = new TextDecoder();
@@ -138,7 +136,7 @@
           if (!raw) continue;
           try {
             var obj = JSON.parse(raw);
-            console.log('[CUT] watcher parsed event: type=' + obj.type + ' keys=' + Object.keys(obj).join(','));
+            debugLog('watcher parsed event: type=' + obj.type + ' keys=' + Object.keys(obj).join(','));
 
             // Fire cut-quota if:
             // 1. The old nested message_limit object is present (original format)
@@ -147,7 +145,7 @@
             // 3. OR usage_metadata is present (another legacy path)
             var isMessageLimit = !!(obj.message_limit) || obj.type === 'message_limit';
             if (isMessageLimit || obj.usage_metadata) {
-              console.log('[CUT] watcher: firing cut-quota. type=' + obj.type + ' has_nested_ml=' + !!obj.message_limit + ' has_windows=' + !!obj.windows);
+              debugLog('watcher: firing cut-quota. type=' + obj.type + ' has_nested_ml=' + !!obj.message_limit + ' has_windows=' + !!obj.windows);
               window.postMessage({ type: 'cut-quota', detail: obj }, window.location.origin);
             }
             // Capture token usage from message_start event

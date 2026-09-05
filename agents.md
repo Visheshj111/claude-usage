@@ -4,7 +4,7 @@
 
 ## What this project is
 
-**Claude Usage Tracker** is a Chrome/Firefox extension (Manifest V3) that tracks real-time Claude.ai usage — messages sent, token consumption, rate-limit status, and weekly quotas. It injects a floating widget into claude.ai, provides a toolbar popup, and a full historical dashboard. All data is stored locally in `chrome.storage`; nothing is sent to any external server.
+**Claude Usage Tracker** is a Chrome extension (Manifest V3) that tracks real-time Claude.ai usage — messages sent, token consumption, rate-limit status, and weekly quotas. It injects a floating widget into claude.ai, provides a toolbar popup, and a full historical dashboard. All data is stored locally in `chrome.storage`; nothing is sent to any external server.
 
 ---
 

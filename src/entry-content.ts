@@ -115,7 +115,7 @@ async function init(): Promise<void> {
     _fastRetryActive = false;
     clearInterval(fastRetryInterval);
     resolveOrgId().then((id) => {
-      if (!id) console.debug("[CUT] orgId not detected after 30s — waiting for user to open a conversation.");
+      if (!id) return;
     });
   }, POLLING.usageFastRetryWindow);
   cleanupFns.push(() => { clearTimeout(fastRetryTimer); clearInterval(fastRetryInterval); });
@@ -132,7 +132,6 @@ async function init(): Promise<void> {
     const staleOrgId = (window as any).__cutLastCompletionOrgId as string | undefined;
     const staleTs = (window as any).__cutCompletionTimestamp as number | undefined;
     if (staleOrgId && staleTs && Date.now() - staleTs < 30_000) {
-      console.debug("[CUT] Recovering missed completion event, orgId:", staleOrgId);
       notifyOrgIdFromWatcher(staleOrgId);
       void refreshUsageAndUI(true, staleOrgId);
     }
