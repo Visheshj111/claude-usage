@@ -77,9 +77,14 @@ function renderOverview(d: OverviewData): void {
   const tokPct = Math.min(100, Math.round((tokens / tokensTotal) * 100));
 
   setBar('bar-messages', msgPct);
-  setNums('nums-messages', msgs, msgsTotal);
+  setBar('bar-messages-mini', msgPct);
+  setNums('nums-messages', msgs, msgsTotal, false);
+  setText('pct-messages', msgPct + '%');
+
   setBar('bar-tokens', tokPct);
-  setNums('nums-tokens', tokens, tokensTotal);
+  setBar('bar-tokens-mini', tokPct);
+  setNums('nums-tokens', tokens, tokensTotal, true);
+  setText('pct-tokens', tokPct + '%');
 
   const resetEl = document.getElementById('reset-timer');
   if (resetEl) resetEl.textContent = resetTimestamp && resetTimestamp > Date.now() ? formatDuration(resetTimestamp - Date.now()) : formatDuration(resetIn);
@@ -111,12 +116,16 @@ async function renderHistory(): Promise<void> {
       const maxTotal = Math.max(...result.map(([, r]: [string, DayData]) => (r.messagesSent || 0) + (r.messagesReceived || 0)), 1);
       const barW = Math.round((total / maxTotal) * 100);
       return `<tr>
-        <td class="col-date">${date}</td>
-        <td class="col-num">${formatNum(day.messagesSent)}</td>
-        <td class="col-num">${formatNum(day.messagesReceived)}</td>
-        <td class="col-num">${formatNum(tokens)}</td>
-        <td class="col-num">${formatNum(day.conversations)}</td>
-        <td><span class="mini-bar" style="width:${barW}px"></span></td>
+        <td class="px-5 py-4 font-medium">${date}</td>
+        <td class="px-3 py-4">${formatNum(day.messagesSent)}</td>
+        <td class="px-3 py-4">${formatNum(day.messagesReceived)}</td>
+        <td class="px-3 py-4 tabular-nums">${formatNum(tokens)}</td>
+        <td class="px-3 py-4">${formatNum(day.conversations)}</td>
+        <td class="px-5 py-4">
+          <div class="h-2 w-24 overflow-hidden rounded-full bg-accent">
+            <div class="h-full bg-primary" style="width:${barW}%"></div>
+          </div>
+        </td>
       </tr>`;
     }).join('');
   }
@@ -191,7 +200,7 @@ function renderConversations(d: { conversations?: Record<string, ConvEntry> | nu
   const countEl = document.getElementById('conv-count');
 
   if (!convs || Object.keys(convs).length === 0) {
-    if (tbody) tbody.innerHTML = '<tr class="empty-row"><td colspan="4">No conversations yet.</td></tr>';
+    if (tbody) tbody.innerHTML = '<article class="px-5 py-4 text-center text-sm">No chats found.</article>';
     if (countEl) countEl.textContent = '0';
     return;
   }
@@ -209,12 +218,16 @@ function renderConversations(d: { conversations?: Record<string, ConvEntry> | nu
       const tokens = (conv.tokensSent || 0) + (conv.tokensReceived || 0);
       const date = formatDate(conv.startedAt);
       const title = conv.title || 'Untitled';
-      return `<tr>
-        <td class="col-title">${esc(title)}</td>
-        <td class="col-num">${total}</td>
-        <td class="col-num">${formatNum(tokens)}</td>
-        <td class="col-date">${date}</td>
-      </tr>`;
+      return `<article class="flex items-center justify-between gap-3 px-5 py-4 transition hover:bg-muted">
+        <div class="min-w-0">
+          <p class="truncate font-medium">${esc(title)}</p>
+          <p class="mt-1 text-xs text-muted-foreground">${date} &middot; ${total} messages</p>
+        </div>
+        <div class="text-right">
+          <p class="font-semibold tabular-nums text-primary">${formatNum(tokens)}</p>
+          <p class="text-xs text-muted-foreground">tokens</p>
+        </div>
+      </article>`;
     }).join('');
   }
 }
@@ -226,18 +239,18 @@ function setText(id: string, val: string | number | null | undefined): void {
   if (el) el.textContent = String(val ?? '0');
 }
 
-function setNums(id: string, used: number, total: number): void {
+function setNums(id: string, used: number, total: number, isTokens: boolean = false): void {
   const el = document.getElementById(id);
-  if (el) el.textContent = `${formatNum(used)} / ${formatNum(total)}`;
+  if (el) el.textContent = `${formatNum(used)} of ${formatNum(total)} ${isTokens ? 'tokens' : 'messages'} used`;
 }
 
 function setBar(id: string, pct: number): void {
   const el = document.getElementById(id);
   if (!el) return;
   el.style.width = `${pct}%`;
-  el.className = 'progress-fill';
-  if (pct >= 90) el.classList.add('danger');
-  else if (pct >= 70) el.classList.add('warn');
+  el.classList.remove('bg-primary', 'bg-destructive');
+  if (pct >= 90) el.classList.add('bg-destructive');
+  else el.classList.add('bg-primary');
 }
 
 function formatDuration(ms: number): string {

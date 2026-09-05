@@ -1,154 +1,286 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <script src="../theme-boot.js"></script>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Usage Dashboard — Claude Usage Tracker</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="dashboard.css">
-</head>
-<body>
-  <div id="app">
-    <header>
-      <div class="header-left">
-        <h1>Your Claude Usage</h1>
-        <span class="badge" id="period-badge">Daily</span>
-      </div>
-      <div class="header-right">
-        <span class="status-dot" id="status-dot"></span>
-        <span class="status-label" id="status-label">Tracking</span>
-        <button id="db-force-reload" title="Refresh usage data">↻</button>
-      </div>
-    </header>
+  <head>
+    <script src="../theme-boot.js"></script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Screen</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Poppins:wght@100..900&family=Fira+Code:wght@300..700&family=Plus+Jakarta+Sans:wght@200;300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link id="theme-fonts" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://code.iconify.design/iconify-icon/3.0.0/iconify-icon.min.js"></script>
+    <style type="text/tailwindcss">
+      @import "tailwindcss";
+      @theme inline {
+        --color-background: var(--background);
+        --color-foreground: var(--foreground);
+        --color-primary: var(--primary);
+        --color-primary-foreground: var(--primary-foreground);
+        --color-secondary: var(--secondary);
+        --color-secondary-foreground: var(--secondary-foreground);
+        --color-tertiary: var(--tertiary);
+        --color-tertiary-foreground: var(--tertiary-foreground);
+        --color-muted: var(--muted);
+        --color-muted-foreground: var(--muted-foreground);
+        --color-accent: var(--accent);
+        --color-accent-foreground: var(--accent-foreground);
+        --color-destructive: var(--destructive);
+        --color-destructive-foreground: var(--destructive-foreground);
+        --color-card: var(--card);
+        --color-card-foreground: var(--card-foreground);
+        --color-popover: var(--popover);
+        --color-popover-foreground: var(--popover-foreground);
+        --color-border: var(--border);
+        --color-input: var(--input);
+        --color-ring: var(--ring);
+        --radius-sm: calc(var(--radius) - 4px);
+        --radius-md: calc(var(--radius) - 2px);
+        --radius-lg: var(--radius);
+        --font-family-sans: var(--font-sans);
+        --font-family-heading: var(--font-heading);
+        --font-family-mono: var(--font-mono);
+        --font-heading: var(--font-heading, var(--font-sans, ui-sans-serif, system-ui, sans-serif));
+      }
 
-    <!-- Overview -->
-    <div class="card">
-      <div class="section-header">
-        <h2>Right Now</h2>
-        <span class="section-meta" id="overview-period">Today</span>
+      @layer base {
+        .bg-card { color: var(--card-foreground); }
+        .bg-popover { color: var(--popover-foreground, var(--card-foreground)); }
+        .bg-primary { color: var(--primary-foreground); }
+        .bg-secondary { color: var(--secondary-foreground); }
+        .bg-accent { color: var(--accent-foreground, var(--foreground)); }
+        .bg-tertiary { color: var(--tertiary-foreground, var(--primary-foreground)); }
+        .bg-destructive { color: var(--destructive-foreground, var(--primary-foreground)); }
+      }
+      :root { --background: #0B0F19;
+        --foreground: #FFFFFF;
+        --primary: #8B5CF6;
+        --primary-foreground: #0F0F0F;
+        --secondary: #161B26;
+        --secondary-foreground: #FFFFFF;
+        --tertiary: #10B981;
+        --muted: #161B26;
+        --muted-foreground: #9CA3AF;
+        --accent: #242F41;
+        --accent-foreground: #FFFFFF;
+        --card: #161B26;
+        --card-foreground: #FFFFFF;
+        --destructive: #EF4444;
+        --border: #242F41;
+        --input: #242F41;
+        --ring: #8B5CF6;
+        --radius: 0.75rem;
+        --font-sans: Inter,sans-serif;
+        --font-heading: Inter,sans-serif;
+        --font-mono: JetBrains Mono, monospace;
+        --shadow-offset-x: 0;
+        --shadow-offset-y: 10;
+        --shadow-blur: 30;
+        --shadow-spread: -8;
+        --shadow-color: rgba(15, 23, 42, 0.12);
+        --tertiary-foreground: #393939;
+        --destructive-foreground: #1C1C1C;
+        --secondary-text: #7C8391;
+        --accent-text: #768499; }
+    </style>
+    <style>
+      .brand-gradient { background-image: linear-gradient(135deg, var(--primary), var(--accent)); }
+      .shadow-theme {
+        box-shadow:
+          calc(var(--shadow-offset-x, 0) * 1px) calc(var(--shadow-offset-y, 10) * 1px)
+          calc(var(--shadow-blur, 30) * 1px) calc(var(--shadow-spread, -8) * 1px)
+          var(--shadow-color, rgba(15, 23, 42, 0.12));
+      }
+      .text-primary { color: var(--primary-text, var(--primary)); }
+      .text-secondary { color: var(--secondary-text, var(--secondary)); }
+      .text-tertiary { color: var(--tertiary-text, var(--tertiary)); }
+      .text-accent { color: var(--accent-text, var(--accent)); }
+      .text-destructive { color: var(--destructive-text, var(--destructive)); }
+    </style>
+  </head>
+  <body>
+<div class="min-h-screen w-full bg-background flex flex-col relative font-sans text-foreground">
+  <header class="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur-md">
+    <div class="mx-auto flex w-full max-w-[1440px] items-center justify-between px-4 py-4 md:px-6">
+      <div class="flex items-center gap-3">
+        <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-primary shadow-md">
+          <iconify-icon icon="lucide:sparkles" class="text-xl text-primary-foreground"></iconify-icon>
+        </div>
+        <div>
+          <p class="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Personal analytics</p>
+          <h1 class="font-heading text-xl font-bold">Claude Usage</h1>
+        </div>
       </div>
-
-      <div class="overview-grid">
-        <div class="overview-stat">
-          <span class="overview-val mono" id="ov-messages">0</span>
-          <span class="overview-lbl">messages</span>
-          <span class="overview-sub mono" id="ov-messages-of">/ 100</span>
-        </div>
-        <div class="overview-stat">
-          <span class="overview-val mono" id="ov-tokens">0</span>
-          <span class="overview-lbl">tokens</span>
-          <span class="overview-sub mono" id="ov-tokens-of">/ 50K</span>
-        </div>
-        <div class="overview-stat">
-          <span class="overview-val mono" id="ov-sent">0</span>
-          <span class="overview-lbl">sent</span>
-        </div>
-        <div class="overview-stat">
-          <span class="overview-val mono" id="ov-recv">0</span>
-          <span class="overview-lbl">received</span>
-        </div>
-        <div class="overview-stat">
-          <span class="overview-val mono" id="ov-convs">0</span>
-          <span class="overview-lbl">chats</span>
-        </div>
-        <div class="overview-stat">
-          <span class="overview-val mono" id="ov-session">--:--:--</span>
-          <span class="overview-lbl">session</span>
-        </div>
-      </div>
-
-      <div class="progress-group">
-        <div class="progress-row">
-          <span class="progress-lbl">Messages</span>
-          <div class="progress-bar"><div class="progress-fill" id="bar-messages"></div></div>
-          <span class="progress-nums mono" id="nums-messages">0 / 100</span>
-        </div>
-        <div class="progress-row">
-          <span class="progress-lbl">Tokens</span>
-          <div class="progress-bar"><div class="progress-fill" id="bar-tokens"></div></div>
-          <span class="progress-nums mono" id="nums-tokens">0 / 50K</span>
-        </div>
-      </div>
-
-      <div class="reset-row">
-        <span class="reset-lbl">Limits reset in</span>
-        <span class="mono" id="reset-timer">--:--:--</span>
+      <div class="flex items-center gap-2">
+        <button id="period-badge" class="min-h-11 rounded-lg border border-border bg-card px-3 text-sm text-muted-foreground transition hover:border-primary hover:text-foreground">
+          <iconify-icon icon="lucide:calendar" class="mr-2 text-base"></iconify-icon>Last 14 days
+        </button>
+        <button id="db-force-reload" class="flex min-h-11 w-11 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition hover:border-primary hover:text-foreground" aria-label="Refresh usage data">
+          <iconify-icon icon="lucide:refresh-cw" class="text-lg"></iconify-icon>
+        </button>
       </div>
     </div>
+  </header>
 
-    <!-- Usage Squares Heatmap -->
-    <div class="card">
-      <div class="section-header">
-        <h2>Activity Map</h2>
-        <span class="section-meta" id="heatmap-range"></span>
-      </div>
-      <div class="heatmap-wrap">
-        <div class="heatmap-scroll">
-          <div class="heatmap-grid" id="hours-heatmap"></div>
+  <main class="mx-auto w-full max-w-[1440px] flex-1 px-4 py-6 md:px-6 md:py-8">
+    <section class="mb-8">
+      <div class="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+        <div>
+          <p id="overview-period" class="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary">Current reset period</p>
+          <h2 class="font-heading text-2xl font-bold text-balance">Right Now</h2>
+          <p class="mt-1 text-sm text-muted-foreground">A clear view of your Claude limits, conversations, and active session.</p>
         </div>
-        <div class="heatmap-footer">
-          <span class="heatmap-hint">Hover over a square to see details.</span>
-          <div class="heatmap-legend" aria-label="Heatmap legend">
-            <span>Less</span>
-            <span class="heat-cell level-0"></span>
-            <span class="heat-cell level-1"></span>
-            <span class="heat-cell level-2"></span>
-            <span class="heat-cell level-3"></span>
-            <span class="heat-cell level-4"></span>
-            <span>More</span>
+        <div class="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
+          <span id="status-dot" class="h-2 w-2 rounded-full bg-tertiary"></span>
+          <span id="status-label" class="text-sm text-muted-foreground">Usage tracking live</span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 lg:grid-cols-6">
+        <article class="rounded-xl border border-border bg-card p-4 shadow-md transition hover:-translate-y-0.5 hover:border-primary">
+          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Messages</p>
+          <p class="mt-3 font-heading text-2xl font-bold tabular-nums"><span id="ov-messages">0</span> <span id="ov-messages-of" class="text-sm font-medium text-muted-foreground">/ 100</span></p>
+          <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-accent">
+            <div id="bar-messages-mini" class="h-full w-0 rounded-full bg-primary transition-all"></div>
+          </div>
+        </article>
+        
+        <article class="rounded-xl border border-border bg-card p-4 shadow-md transition hover:-translate-y-0.5 hover:border-primary">
+          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tokens</p>
+          <p class="mt-3 font-heading text-2xl font-bold tabular-nums"><span id="ov-tokens">0</span> <span id="ov-tokens-of" class="text-sm font-medium text-muted-foreground">/ 50K</span></p>
+          <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-accent">
+            <div id="bar-tokens-mini" class="h-full w-0 rounded-full bg-primary transition-all"></div>
+          </div>
+        </article>
+
+        <article class="rounded-xl border border-border bg-card p-4 shadow-md transition hover:-translate-y-0.5 hover:border-primary">
+          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sent</p>
+          <p id="ov-sent" class="mt-3 font-heading text-2xl font-bold tabular-nums">0</p>
+          <p class="mt-3 text-xs text-muted-foreground">messages sent</p>
+        </article>
+
+        <article class="rounded-xl border border-border bg-card p-4 shadow-md transition hover:-translate-y-0.5 hover:border-primary">
+          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Received</p>
+          <p id="ov-recv" class="mt-3 font-heading text-2xl font-bold tabular-nums">0</p>
+          <p class="mt-3 text-xs text-muted-foreground">messages received</p>
+        </article>
+
+        <article class="rounded-xl border border-border bg-card p-4 shadow-md transition hover:-translate-y-0.5 hover:border-primary">
+          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Chats</p>
+          <p id="ov-convs" class="mt-3 font-heading text-2xl font-bold tabular-nums">0</p>
+          <p class="mt-3 text-xs text-muted-foreground">active today</p>
+        </article>
+
+        <article class="rounded-xl border border-border bg-card p-4 shadow-md transition hover:-translate-y-0.5 hover:border-primary">
+          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Session</p>
+          <p id="ov-session" class="mt-3 font-heading text-2xl font-bold tabular-nums">--:--:--</p>
+          <p class="mt-3 text-xs text-muted-foreground">duration</p>
+        </article>
+      </div>
+
+      <div class="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr_260px]">
+        <div class="rounded-xl border border-border bg-card p-5 shadow-md">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-semibold">Message limit</p>
+              <p id="nums-messages" class="mt-1 text-xs text-muted-foreground">0 of 100 messages used</p>
+            </div>
+            <span id="pct-messages" class="rounded-full bg-accent px-2.5 py-1 text-xs font-semibold text-primary">0%</span>
+          </div>
+          <div class="mt-4 h-3 overflow-hidden rounded-full bg-accent">
+            <div id="bar-messages" class="h-full w-0 rounded-full bg-primary transition-all"></div>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-border bg-card p-5 shadow-md">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-semibold">Token limit</p>
+              <p id="nums-tokens" class="mt-1 text-xs text-muted-foreground">0 of 50,000 tokens used</p>
+            </div>
+            <span id="pct-tokens" class="rounded-full bg-accent px-2.5 py-1 text-xs font-semibold text-primary">0%</span>
+          </div>
+          <div class="mt-4 h-3 overflow-hidden rounded-full bg-accent">
+            <div id="bar-tokens" class="h-full w-0 rounded-full bg-primary transition-all"></div>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-primary/60 bg-primary p-5 shadow-md">
+          <p class="text-xs font-semibold uppercase tracking-[0.16em] text-primary-foreground">Limits reset in</p>
+          <p id="reset-timer" class="mt-2 font-heading text-3xl font-bold tabular-nums text-primary-foreground">--:--:--</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="mb-8 rounded-xl border border-border bg-card p-5 shadow-md md:p-6">
+      <div class="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+        <div>
+          <h2 class="font-heading text-lg font-semibold">Activity Map</h2>
+          <p id="heatmap-range" class="mt-1 text-sm text-muted-foreground">Message and token intensity</p>
+        </div>
+        <div class="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>Less</span>
+          <span class="h-3 w-3 rounded-sm bg-accent"></span>
+          <span class="h-3 w-3 rounded-sm bg-primary/30"></span>
+          <span class="h-3 w-3 rounded-sm bg-primary/60"></span>
+          <span class="h-3 w-3 rounded-sm bg-primary"></span>
+          <span>More</span>
+        </div>
+      </div>
+      <div class="mt-6 overflow-x-auto">
+        <div class="min-w-[680px]">
+          <div class="mb-2 grid grid-cols-[42px_repeat(14,minmax(16px,1fr))] gap-1 text-[10px] text-muted-foreground" id="heatmap-legend-top">
+            <!-- Will be populated dynamically if needed, or left empty -->
+          </div>
+          <div id="hours-heatmap" class="space-y-1">
+            <!-- Heatmap generated via dashboard.ts -->
           </div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- Daily Breakdown -->
-    <div class="card">
-      <div class="section-header">
-        <h2>Day by Day</h2>
-        <span class="section-meta" id="history-count">14 days</span>
-      </div>
-      <table id="history-table">
-        <thead>
-          <tr>
-            <th class="col-date">Date</th>
-            <th class="col-num">Sent</th>
-            <th class="col-num">Recv</th>
-            <th class="col-num">Tokens</th>
-            <th class="col-num">Chats</th>
-            <th class="col-bar">Usage</th>
-          </tr>
-        </thead>
-        <tbody id="history-body">
-          <tr class="empty-row"><td colspan="6">No data yet. Go chat with Claude!</td></tr>
-        </tbody>
-      </table>
-    </div>
+    <div class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+      <section class="overflow-hidden rounded-xl border border-border bg-card shadow-md">
+        <div class="flex items-center justify-between border-b border-border px-5 py-4">
+          <div>
+            <h2 class="font-heading text-lg font-semibold">Day by Day</h2>
+            <p id="history-count" class="mt-1 text-sm text-muted-foreground">Your recent Claude activity.</p>
+          </div>
+          <button class="min-h-11 rounded-lg px-3 text-sm text-primary transition hover:bg-accent">Export</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table id="history-table" class="w-full min-w-[620px] text-left text-sm">
+            <thead class="bg-muted text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th class="px-5 py-3 font-medium">Date</th>
+                <th class="px-3 py-3 font-medium">Sent</th>
+                <th class="px-3 py-3 font-medium">Received</th>
+                <th class="px-3 py-3 font-medium">Tokens</th>
+                <th class="px-3 py-3 font-medium">Chats</th>
+                <th class="px-5 py-3 font-medium">Usage</th>
+              </tr>
+            </thead>
+            <tbody id="history-body" class="divide-y divide-border">
+              <tr class="empty-row"><td colspan="6" class="px-5 py-4 text-center">No data yet. Go chat with Claude!</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-    <!-- Recent Conversations -->
-    <div class="card">
-      <div class="section-header">
-        <h2>Recent Chats</h2>
-        <span class="section-meta" id="conv-count">0</span>
-      </div>
-      <table id="conv-table">
-        <thead>
-          <tr>
-            <th class="col-title">Title</th>
-            <th class="col-num">Messages</th>
-            <th class="col-num">Tokens</th>
-            <th class="col-date">Date</th>
-          </tr>
-        </thead>
-        <tbody id="conv-body">
-          <tr class="empty-row"><td colspan="4">No chats found.</td></tr>
-        </tbody>
-      </table>
+      <section class="overflow-hidden rounded-xl border border-border bg-card shadow-md">
+        <div class="border-b border-border px-5 py-4">
+          <h2 class="font-heading text-lg font-semibold">Recent Chats</h2>
+          <p id="conv-count" class="mt-1 text-sm text-muted-foreground">Conversations with the highest token usage.</p>
+        </div>
+        <div id="conv-body" class="divide-y divide-border">
+          <article class="px-5 py-4 text-center text-sm">No chats found.</article>
+        </div>
+      </section>
     </div>
-
-    <div class="credit">Made by <a href="https://github.com/visheshj111" target="_blank">Vishesh Jangid</a> &middot; <a href="https://visheshj111.github.io/portfolio/" target="_blank">Portfolio</a></div>
-  </div>
-  <script src="dashboard.js"></script>
+  </main>
+</div>
+<script src="dashboard.js"></script>
 </body>
 </html>
