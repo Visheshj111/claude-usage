@@ -1,5 +1,6 @@
 import * as esbuild from 'esbuild';
 import { cpSync, rmSync, readdirSync } from 'fs';
+import { execSync } from 'child_process';
 import { resolve, dirname, extname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -36,7 +37,7 @@ function copyStatic(dir) {
     for (const entry of entries) {
       if (entry.isDirectory()) continue;
       const ext = extname(entry.name).toLowerCase();
-      if (ext === '.js' || ext === '.ts' || ext === '.tsx') continue;
+      if ((ext === '.js' && !entry.name.endsWith('.min.js')) || ext === '.ts' || ext === '.tsx') continue;
       const srcFile = resolve(srcDir, entry.name);
       const dstFile = resolve(dstDir, entry.name);
       try { cpSync(srcFile, dstFile); } catch {}
@@ -71,6 +72,13 @@ async function build() {
 
   try { cpSync(resolve(__dirname, 'src', 'watcher.js'), resolve(dist, 'watcher.js')); } catch {}
   try { cpSync(resolve(__dirname, 'icons'), resolve(dist, 'icons'), { recursive: true }); } catch {}
+
+  console.log('building dashboard css with tailwind...');
+  try {
+    execSync('npx tailwindcss -i ./src/dashboard/dashboard.css -o ./dist/dashboard/dashboard.css', { stdio: 'inherit' });
+  } catch (err) {
+    console.error('Tailwind build failed', err);
+  }
 
   console.log('build complete');
 }
