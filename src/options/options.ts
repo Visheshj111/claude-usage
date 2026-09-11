@@ -1,24 +1,35 @@
-export {};
 import { DEFAULT_SETTINGS } from '../background/settings';
+
+interface RefinerKeyResponse {
+  success?: boolean;
+  configured?: boolean;
+}
+
+function byId<T extends HTMLElement>(id: string): T {
+  return document.getElementById(id) as T;
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
   const { settings } = await chrome.storage.local.get('settings');
-  const s: any = settings || {};
-  const themeMode = s.themeMode || 'auto';
+  const s = (settings || {}) as Record<string, unknown>;
+  const themeMode = typeof s.themeMode === 'string' ? s.themeMode : 'auto';
   applyOptionsTheme(themeMode);
 
+  byId<HTMLSelectElement>('reset-period').value =
+    typeof s.resetPeriod === 'string' ? s.resetPeriod : DEFAULT_SETTINGS.resetPeriod;
+  byId<HTMLSelectElement>('token-method').value =
+    typeof s.tokenEstimationMethod === 'string' ? s.tokenEstimationMethod : DEFAULT_SETTINGS.tokenEstimationMethod;
+  byId<HTMLInputElement>('show-notifications').checked = s.showNotifications !== false;
+  byId<HTMLInputElement>('show-inpage-widget').checked = s.showInPageWidget !== false;
+  byId<HTMLInputElement>('refiner-enabled').checked = s.refinerEnabled !== false;
+  byId<HTMLSelectElement>('theme-mode').value = themeMode;
 
-  (document.getElementById('reset-period') as HTMLSelectElement).value =
-    s.resetPeriod || DEFAULT_SETTINGS.resetPeriod;
-  (document.getElementById('token-method') as HTMLSelectElement).value =
-    s.tokenEstimationMethod || DEFAULT_SETTINGS.tokenEstimationMethod;
-  (document.getElementById('show-notifications') as HTMLInputElement).checked = s.showNotifications !== false;
-  (document.getElementById('show-inpage-widget') as HTMLInputElement).checked = s.showInPageWidget !== false;
-  (document.getElementById('refiner-enabled') as HTMLInputElement).checked = s.refinerEnabled === true;
-  (document.getElementById('theme-mode') as HTMLSelectElement).value = themeMode;
+  byId<HTMLButtonElement>('save-btn').addEventListener('click', () => { void saveSettings(); });
+  byId<HTMLButtonElement>('save-refiner-key').addEventListener('click', () => { void saveRefinerApiKey(); });
+  byId<HTMLButtonElement>('clear-refiner-key').addEventListener('click', () => { void clearRefinerApiKey(); });
+  byId<HTMLButtonElement>('reset-all-btn').addEventListener('click', () => { void resetAllData(); });
 
-  document.getElementById('save-btn')?.addEventListener('click', saveSettings);
-  document.getElementById('reset-all-btn')?.addEventListener('click', resetAllData);
+  await refreshRefinerKeyStatus();
 });
 
 function applyOptionsTheme(themeMode: string): void {
@@ -29,16 +40,71 @@ function applyOptionsTheme(themeMode: string): void {
   document.documentElement.classList.toggle('dark', isDark);
 }
 
-async function saveSettings() {
+function setKeyStatus(message: string): void {
+  byId<HTMLElement>('refiner-key-status').textContent = message;
+}
+
+async function refreshRefinerKeyStatus(): Promise<void> {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'GET_REFINER_STATUS' }) as RefinerKeyResponse | undefined;
+    setKeyStatus(response?.configured
+      ? 'API key is ready for this browser session.'
+      : 'No API key saved for this browser session.');
+  } catch {
+    setKeyStatus('Could not check API key status. Reload this page and try again.');
+  }
+}
+
+async function saveRefinerApiKey(): Promise<void> {
+  const input = byId<HTMLInputElement>('refiner-api-key');
+  const button = byId<HTMLButtonElement>('save-refiner-key');
+  const apiKey = input.value.trim();
+  if (!apiKey) {
+    setKeyStatus('Paste an Anthropic API key before saving it.');
+    input.focus();
+    return;
+  }
+
+  button.disabled = true;
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'SAVE_REFINER_API_KEY', apiKey }) as RefinerKeyResponse | undefined;
+    input.value = '';
+    setKeyStatus(response?.success && response.configured
+      ? 'API key is ready for this browser session.'
+      : 'Could not save the API key. Try again.');
+  } catch {
+    setKeyStatus('Could not save the API key. Reload this page and try again.');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function clearRefinerApiKey(): Promise<void> {
+  const button = byId<HTMLButtonElement>('clear-refiner-key');
+  button.disabled = true;
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'CLEAR_REFINER_API_KEY' }) as RefinerKeyResponse | undefined;
+    byId<HTMLInputElement>('refiner-api-key').value = '';
+    setKeyStatus(response?.success
+      ? 'API key cleared for this browser session.'
+      : 'Could not clear the API key. Try again.');
+  } catch {
+    setKeyStatus('Could not clear the API key. Reload this page and try again.');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveSettings(): Promise<void> {
   const { settings: existing } = await chrome.storage.local.get('settings');
-  const existingSettings: any = existing || {};
+  const existingSettings = (existing || {}) as { limits?: typeof DEFAULT_SETTINGS.limits };
   const settings = {
-    resetPeriod: (document.getElementById('reset-period') as HTMLSelectElement).value,
-    tokenEstimationMethod: (document.getElementById('token-method') as HTMLSelectElement).value,
-    showNotifications: (document.getElementById('show-notifications') as HTMLInputElement).checked,
-    showInPageWidget: (document.getElementById('show-inpage-widget') as HTMLInputElement).checked,
-    refinerEnabled: (document.getElementById('refiner-enabled') as HTMLInputElement).checked,
-    themeMode: (document.getElementById('theme-mode') as HTMLSelectElement).value,
+    resetPeriod: byId<HTMLSelectElement>('reset-period').value,
+    tokenEstimationMethod: byId<HTMLSelectElement>('token-method').value,
+    showNotifications: byId<HTMLInputElement>('show-notifications').checked,
+    showInPageWidget: byId<HTMLInputElement>('show-inpage-widget').checked,
+    refinerEnabled: byId<HTMLInputElement>('refiner-enabled').checked,
+    themeMode: byId<HTMLSelectElement>('theme-mode').value,
     limits: existingSettings.limits || DEFAULT_SETTINGS.limits,
   };
 
@@ -46,18 +112,18 @@ async function saveSettings() {
   applyOptionsTheme(settings.themeMode);
   await chrome.runtime.sendMessage({ type: 'SAVE_SETTINGS', data: settings });
 
-  const status = document.getElementById('save-status');
-  if (status) status.textContent = 'Settings saved!';
-  setTimeout(() => { if (status) status.textContent = ''; }, 2000);
+  const status = byId<HTMLElement>('save-status');
+  status.textContent = 'Settings saved!';
+  setTimeout(() => { if (status) status.textContent = ''; }, 2_000);
 }
 
-async function resetAllData() {
+async function resetAllData(): Promise<void> {
   if (!confirm('Permanently delete ALL tracked usage data and conversations?')) return;
   if (!confirm('This cannot be undone. Continue?')) return;
 
   await chrome.runtime.sendMessage({ type: 'RESET_USAGE' });
 
-  const status = document.getElementById('save-status');
-  if (status) status.textContent = 'All data deleted.';
-  setTimeout(() => { if (status) status.textContent = ''; }, 3000);
+  const status = byId<HTMLElement>('save-status');
+  status.textContent = 'All data deleted.';
+  setTimeout(() => { if (status) status.textContent = ''; }, 3_000);
 }

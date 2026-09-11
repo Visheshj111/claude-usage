@@ -1,5 +1,3 @@
-import type { RefinementResult } from "../refiner";
-
 // ── Per-response token stats (from SSE message_start) ──
 export interface MessageStats {
   inputTokens: number;
@@ -32,7 +30,4 @@ export const TRACK = {
   sessionStarted: false,
   sessionCheckTimer: null as ReturnType<typeof setInterval> | null,
   uiUpdateInterval: null as ReturnType<typeof setInterval> | null,
-  inputEl: null as HTMLElement | null,
-  lastRefinement: null as RefinementResult | null,
-  refineDeepInProgress: false,
 };

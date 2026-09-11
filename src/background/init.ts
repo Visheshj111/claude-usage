@@ -14,8 +14,27 @@ import {
   scheduleBgUsageRefresh,
 } from './webrequest';
 import { updateIcon, formatBgDuration } from './icon';
+import {
+  clearPromptRefinerApiKey,
+  getPromptRefinerErrorMessage,
+  getPromptRefinerStatus,
+  refinePromptWithClaude,
+  savePromptRefinerApiKey,
+} from './prompt-refiner';
 
 let initialized = false;
+
+function isClaudeContentScript(sender: chrome.runtime.MessageSender): boolean {
+  return sender.id === chrome.runtime.id
+    && typeof sender.url === 'string'
+    && sender.url.startsWith('https://claude.ai/');
+}
+
+function isOptionsPage(sender: chrome.runtime.MessageSender): boolean {
+  return sender.id === chrome.runtime.id
+    && typeof sender.url === 'string'
+    && sender.url.startsWith(chrome.runtime.getURL('dist/options/'));
+}
 
 function broadcastState(state: UsageState): void {
   chrome.runtime.sendMessage({ type: "STATE_UPDATE", state }).catch(() => {});
@@ -119,6 +138,48 @@ export async function init(): Promise<void> {
 
       case "SAVE_SETTINGS":
         saveSettings(message.data).then(() => sendResponse({ success: true }));
+        return true;
+
+      case "GET_REFINER_STATUS":
+        if (sender.id !== chrome.runtime.id) {
+          sendResponse({ configured: false });
+          break;
+        }
+        getPromptRefinerStatus().then(sendResponse).catch(() => sendResponse({ configured: false }));
+        return true;
+
+      case "SAVE_REFINER_API_KEY":
+        if (!isOptionsPage(sender) || typeof message.apiKey !== 'string') {
+          sendResponse({ success: false, configured: false });
+          break;
+        }
+        savePromptRefinerApiKey(message.apiKey)
+          .then((status) => sendResponse({ success: true, ...status }))
+          .catch(() => sendResponse({ success: false, configured: false }));
+        return true;
+
+      case "CLEAR_REFINER_API_KEY":
+        if (!isOptionsPage(sender)) {
+          sendResponse({ success: false, configured: false });
+          break;
+        }
+        clearPromptRefinerApiKey()
+          .then((status) => sendResponse({ success: true, ...status }))
+          .catch(() => sendResponse({ success: false, configured: false }));
+        return true;
+
+      case "REFINE_PROMPT":
+        if (!isClaudeContentScript(sender)) {
+          sendResponse({ ok: false, error: 'Prompt refinement is only available on Claude.ai.' });
+          break;
+        }
+        if (typeof message.prompt !== 'string') {
+          sendResponse({ ok: false, error: 'Write a prompt before refining it.' });
+          break;
+        }
+        refinePromptWithClaude(message.prompt)
+          .then((result) => sendResponse({ ok: true, result }))
+          .catch((error: unknown) => sendResponse({ ok: false, error: getPromptRefinerErrorMessage(error) }));
         return true;
 
       case "RESET_USAGE":

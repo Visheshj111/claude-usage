@@ -448,34 +448,40 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Refine Button ── */
-#cut-refine-btn {
-  position: fixed;
+/* ── Composer prompt refiner ── */
+#cut-composer-refiner {
+  position: absolute;
   z-index: 2147483645;
-  height: 26px;
-  padding: 0 10px;
-  background: var(--cut-bg);
-  border: 0.5px solid var(--cut-border2);
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 500;
+  top: -38px;
+  right: 12px;
+  display: flex;
+  align-items: center;
   font-family: var(--cut-font);
-  color: var(--cut-accent);
-  cursor: pointer;
-  user-select: none;
-  display: none;
-  transition: opacity 0.15s ease, transform 0.15s ease;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
 }
 
-#cut-refine-btn:hover {
+#cut-composer-refiner button {
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--cut-border2);
+  border-radius: 7px;
+  background: var(--cut-bg);
+  color: var(--cut-accent);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  cursor: pointer;
+  font: 600 12px/1 var(--cut-font);
+  letter-spacing: -0.01em;
+  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
+}
+
+#cut-composer-refiner button:hover:not(:disabled) {
   background: var(--cut-bg2);
+  border-color: var(--cut-accent);
   transform: translateY(-1px);
 }
 
-#cut-refine-btn.loading {
-  opacity: 0.6;
-  cursor: not-allowed;
+#cut-composer-refiner button:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 /* ── Refine Overlay ── */
@@ -488,6 +494,10 @@
   align-items: center;
   justify-content: center;
   backdrop-filter: blur(2px);
+}
+
+#cut-refine-overlay [hidden] {
+  display: none !important;
 }
 
 #cut-refine-card {
@@ -516,6 +526,17 @@
   font-weight: 500;
   color: var(--cut-text);
   flex: 1;
+}
+
+.cut-refine-size {
+  font-size: 11px;
+  font-family: var(--cut-mono);
+  font-weight: 500;
+  color: var(--cut-text2);
+  background: var(--cut-bg2);
+  padding: 2px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
 }
 
 .cut-refine-savings {
@@ -551,6 +572,21 @@
   overflow: hidden;
   min-height: 120px;
   max-height: 320px;
+}
+
+.cut-refine-note,
+.cut-refine-message {
+  margin: 0;
+  padding: 12px 14px;
+  color: var(--cut-text2);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.cut-refine-note {
+  padding-bottom: 0;
+  font-size: 12px;
 }
 
 .cut-refine-col {
@@ -622,6 +658,10 @@
   gap: 6px;
 }
 
+.cut-refine-footer-message {
+  justify-content: flex-end;
+}
+
 .cut-refine-btn-secondary {
   height: 28px;
   padding: 0 12px;
@@ -637,6 +677,12 @@
 
 .cut-refine-btn-secondary:hover {
   background: var(--cut-bg2);
+}
+
+.cut-refine-btn-secondary:disabled,
+.cut-refine-btn-primary:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .cut-refine-btn-primary {
@@ -662,6 +708,29 @@
   text-align: center;
   padding: 6px 14px;
   border-top: 0.5px solid var(--cut-border);
+}
+
+@media (max-width: 680px) {
+  #cut-composer-refiner {
+    top: -34px;
+    right: 8px;
+  }
+
+  .cut-refine-body {
+    flex-direction: column;
+    overflow-y: auto;
+    max-height: 58vh;
+  }
+
+  .cut-refine-col {
+    min-height: 120px;
+  }
+
+  .cut-refine-divider {
+    width: auto;
+    height: 0.5px;
+    margin: 0 10px;
+  }
 }
 
 /* ── Review Popup ── */

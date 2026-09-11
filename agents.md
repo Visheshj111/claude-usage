@@ -14,6 +14,7 @@
 src/
   backend/           # Detection pipeline (shared between content script contexts)
   background/        # Service worker (persistent)
+  background/prompt-refiner.ts # Official Anthropic API client; session-only key handling
   content-script/    # Modules that run on claude.ai pages
   popup/             # Toolbar popup (HTML + CSS + TS)
   options/           # Settings page
@@ -24,7 +25,7 @@ src/
   entry-injector.ts  # Injected at document_start to patch fetch/XHR
   config.ts          # Shared constants
   remote-config.ts   # Remote feature flags
-  refiner.ts         # Shared composer refiner logic
+  refiner.ts         # Pure shared refinement contracts and response parsing
   theme-boot.ts      # Theme init helper
 build.mjs            # esbuild build script
 manifest.json        # Extension manifest (MV3)
@@ -82,7 +83,7 @@ Runs on every `https://claude.ai/*` page:
 | `usage-api.ts` | Polls the internal `/usage` API endpoint; updates state + UI |
 | `org-id.ts` | Extracts the organisation ID needed for API calls |
 | `peak-hours.ts` | Detects Anthropic peak-hour windows and feeds them into state |
-| `composer-refiner.ts` | Injects refinement buttons into the Claude message composer |
+| `composer-refiner.ts` | Injects the explicit review-before-replace refinement control into the Claude message composer |
 | `chat-export.ts` | Exports conversations to JSON or plain text |
 
 **`entry-injector.ts`** runs at `document_start` to monkey-patch `fetch`/`XHR` *before* page scripts execute, so quota headers are captured from the very first request.
@@ -173,7 +174,9 @@ Do not add new Chrome extension permissions without a clear justification. The c
 
 ### Privacy constraint
 
-The extension must **never** send user data, messages, or conversation content to any external server. Only communication with `api.anthropic.com` is permitted, and only to read headers from existing requests (not to initiate new ones to third parties).
+Usage tracking must never send user data, messages, or conversation content to an external server. The sole exception is the opt-in Prompt Refiner: only after the user explicitly clicks **Refine**, the selected draft may be sent directly to `https://api.anthropic.com/v1/messages` using the user's own API key. Do not use Claude.ai's private APIs, create hidden conversations, or silently fall back to local text cleanup.
+
+Store the Prompt Refiner key only in `chrome.storage.session`; never return it to a content script, persist it in normal settings, log it, or expose it to Claude.ai. Refinement must remain review-before-replace, so an API failure never changes the user's draft.
 
 ---
 

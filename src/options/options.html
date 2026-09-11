@@ -59,11 +59,21 @@
 
     <section>
       <h2>Prompt Refiner</h2>
-      <p class="desc">Want better prompts? This adds <strong>✦ Refine</strong> (quick clean-up) and <strong>⚡ Deep</strong> (AI rewrite using your active session) right by your chat box. No extra API key needed.</p>
+      <p class="desc">Adds <strong>✦ Refine</strong> next to Claude's chat box. It uses Claude to improve clarity, context, constraints, and the requested output—not just trim wording.</p>
       <label class="check">
         <input type="checkbox" id="refiner-enabled">
         <span>Turn on the Prompt Refiner</span>
       </label>
+      <div class="field refiner-key-field">
+        <label for="refiner-api-key">Anthropic API key</label>
+        <input id="refiner-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…">
+        <p class="field-note" id="refiner-key-status">Checking key status…</p>
+        <div class="refiner-key-actions">
+          <button class="btn-secondary" type="button" id="save-refiner-key">Save key for this session</button>
+          <button class="btn-secondary" type="button" id="clear-refiner-key">Clear key</button>
+        </div>
+      </div>
+      <p class="field-note">Your key stays in extension session storage, is never exposed to Claude.ai, and is cleared when the browser restarts. Your draft is sent to Anthropic only after you click Refine.</p>
     </section>
 
     <section>
@@ -106,11 +116,14 @@
 
         <h3>What we definitely don't do</h3>
         <ul>
-          <li>We <strong>never</strong> read your actual messages</li>
-          <li>We <strong>never</strong> send your data to anyone else</li>
+          <li>We <strong>never</strong> collect your actual messages for tracking or analytics</li>
+          <li>We <strong>never</strong> send your data to a server we operate</li>
           <li>We don't use creepy trackers or analytics</li>
           <li>We don't sell or share your info</li>
         </ul>
+
+        <h3>Prompt Refiner exception</h3>
+        <p>When you explicitly click <strong>✦ Refine</strong>, the current draft is sent to Anthropic's official API to produce a suggestion. It is never sent while you type, and you review the result before it replaces anything. Your API key stays in session-only extension storage and is cleared when the browser restarts.</p>
 
         <h3>You're in control</h3>
         <ul>

@@ -80,7 +80,6 @@ export function checkUrlChange(): void {
 }
 
 export function onUrlChanged(): void {
-  TRACK.inputEl = null;
   TRACK.conversationTitle = extractTitle();
   processPage();
   runDetection("navigation");

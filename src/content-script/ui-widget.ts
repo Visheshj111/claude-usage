@@ -1,8 +1,6 @@
 import { sendRuntimeMessage, getRuntimeUrl } from "./org-id";
-import { TRACK, lastMessageStats } from "./state";
+import { lastMessageStats } from "./state";
 import { runDetection } from "../backend/tracker";
-import { refineLocal, RefinementResult } from "../refiner";
-import { getTrackedOrgId } from "../backend/network-monitor";
 import { URLS } from '../config';
 
 export async function injectStyles(): Promise<void> {
@@ -124,52 +122,6 @@ export function injectUI(): void {
 
   attachUIEvents();
 
-  chrome.storage.local.get('settings').then(({ settings }) => {
-    const s = (settings || {}) as { refinerEnabled?: boolean; themeMode?: string };
-    if (!s.refinerEnabled) return;
-
-    const refineBtn = document.createElement('button');
-    refineBtn.id = 'cut-refine-btn';
-    refineBtn.title = 'Refine prompt (save credits)';
-    refineBtn.innerHTML = '✦ Refine';
-    document.body.appendChild(refineBtn);
-
-    const overlay = document.createElement('div');
-    overlay.id = 'cut-refine-overlay';
-    overlay.style.display = 'none';
-    overlay.innerHTML = `
-      <div id="cut-refine-card">
-        <div class="cut-refine-header">
-          <span class="cut-refine-title">Refined prompt</span>
-          <div class="cut-refine-savings" id="cut-refine-savings">Saved 0 tokens</div>
-          <button class="cut-refine-close" id="cut-refine-close">×</button>
-        </div>
-        <div class="cut-refine-body">
-          <div class="cut-refine-col">
-            <div class="cut-refine-col-label">Original <span class="cut-refine-tokens" id="cut-orig-tokens">~0 tokens</span></div>
-            <div class="cut-refine-text" id="cut-orig-text"></div>
-          </div>
-          <div class="cut-refine-divider"></div>
-          <div class="cut-refine-col">
-            <div class="cut-refine-col-label">Refined <span class="cut-refine-tokens cut-refine-tokens-saved" id="cut-refined-tokens">~0 tokens</span></div>
-            <div class="cut-refine-text cut-refine-text-refined" id="cut-refined-text"></div>
-          </div>
-        </div>
-        <div class="cut-refine-footer">
-          <button class="cut-refine-btn-secondary" id="cut-refine-deep">Deep Refine (API)</button>
-          <div class="cut-refine-footer-right">
-            <button class="cut-refine-btn-secondary" id="cut-refine-dismiss">Dismiss</button>
-            <button class="cut-refine-btn-primary" id="cut-refine-accept">Use refined ↵</button>
-          </div>
-        </div>
-        <div class="cut-refine-status" id="cut-refine-status" style="display:none"></div>
-      </div>
-    `;
-    document.body.appendChild(overlay);
-
-    if (s.themeMode) detectTheme(s.themeMode);
-  });
-
   chrome.storage.local.get('review_dismissed').then((res) => {
     if (!res.review_dismissed) {
       const reviewPopup = document.createElement('div');
@@ -198,8 +150,6 @@ export function injectUI(): void {
 
 export function removeInPageUI(): void {
   document.getElementById("cut-container")?.remove();
-  document.getElementById("cut-refine-btn")?.remove();
-  document.getElementById("cut-refine-overlay")?.remove();
   document.getElementById("cut-review-popup")?.remove();
 }
 
@@ -222,8 +172,6 @@ export function detectTheme(mode?: string): void {
   else isDark = document.documentElement.classList.contains("dark")
     || window.matchMedia("(prefers-color-scheme: dark)").matches;
   container.classList.toggle("cut-dark", isDark);
-  document.getElementById("cut-refine-btn")?.classList.toggle("cut-dark", isDark);
-  document.getElementById("cut-refine-overlay")?.classList.toggle("cut-dark", isDark);
   document.getElementById("cut-review-popup")?.classList.toggle("cut-dark", isDark);
 }
 
@@ -276,99 +224,6 @@ export function attachUIEvents(): void {
     }
   });
 
-  const refineBtn = document.getElementById("cut-refine-btn");
-  if (refineBtn) {
-    refineBtn.addEventListener("click", () => {
-      const text = getInputText();
-      if (!text || text.length <= 20) return;
-      const btn = refineBtn as HTMLButtonElement;
-      btn.textContent = 'Refining…';
-      btn.classList.add('loading');
-      try {
-        const result = refineLocal(text);
-        showRefinementOverlay(result);
-      } finally {
-        btn.innerHTML = '✦ Refine';
-        btn.classList.remove('loading');
-      }
-    });
-  }
-
-  const acceptBtn = document.getElementById("cut-refine-accept");
-  if (acceptBtn) {
-    acceptBtn.addEventListener("click", () => {
-      if (!TRACK.lastRefinement) return;
-      setInputText(TRACK.lastRefinement.refined);
-      hideRefinementOverlay();
-    });
-  }
-
-  const dismissBtn = document.getElementById("cut-refine-dismiss");
-  if (dismissBtn) dismissBtn.addEventListener("click", hideRefinementOverlay);
-  const closeBtn = document.getElementById("cut-refine-close");
-  if (closeBtn) closeBtn.addEventListener("click", hideRefinementOverlay);
-
-  const overlay = document.getElementById("cut-refine-overlay");
-  if (overlay) {
-    overlay.addEventListener("click", (event) => {
-      if (event.target === overlay) hideRefinementOverlay();
-    });
-  }
-
-  const deepBtn = document.getElementById("cut-refine-deep") as HTMLButtonElement;
-  if (deepBtn) {
-    deepBtn.addEventListener("click", async () => {
-      if (TRACK.refineDeepInProgress) return;
-      const orgId = getTrackedOrgId();
-      if (!orgId) {
-        const status = document.getElementById('cut-refine-status') as HTMLElement;
-        status.textContent = "Org ID not detected yet — try again in a moment.";
-        status.style.display = '';
-        return;
-      }
-      TRACK.refineDeepInProgress = true;
-      deepBtn.textContent = 'Refining…';
-      deepBtn.disabled = true;
-      const { refineWithAPI } = await import("../refiner");
-      const originalText = TRACK.lastRefinement?.original || getInputText();
-
-
-      try {
-        const result = await refineWithAPI(originalText, orgId);
-        showRefinementOverlay(result);
-        (document.getElementById('cut-refine-status') as HTMLElement).style.display = 'none';
-      } catch (err) {
-        console.error("[CUT deep refine] failed:", err);
-        const errMsg = err instanceof Error ? err.message : String(err);
-        const status = document.getElementById('cut-refine-status') as HTMLElement;
-        status.textContent = `AI refine failed: ${errMsg}`;
-        status.style.display = '';
-        try {
-          const fallback = refineLocal(TRACK.lastRefinement?.original || getInputText());
-          showRefinementOverlay(fallback);
-          const statusAfter = document.getElementById('cut-refine-status') as HTMLElement;
-          statusAfter.textContent = `AI refine failed — showing local result instead. (${errMsg})`;
-          statusAfter.style.display = '';
-        } catch {
-        }
-      } finally {
-        deepBtn.textContent = 'Deep Refine (API)';
-        deepBtn.disabled = false;
-        TRACK.refineDeepInProgress = false;
-      }
-    });
-  }
-
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      const ol = document.getElementById('cut-refine-overlay');
-      if (ol && ol.style.display !== 'none') {
-        hideRefinementOverlay();
-        e.stopPropagation();
-      }
-    }
-  });
-
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => detectTheme());
   const darkObserver = new MutationObserver(() => detectTheme());
   darkObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
@@ -393,107 +248,11 @@ export function toggleMinimize(): void {
 }
 
 export async function updateUI(): Promise<void> {
-  checkRefineButton();
   try {
     const result = await sendRuntimeMessage<Record<string, unknown>>({ type: "GET_ALL_DATA" });
     if (!result) return;
     renderUI(result);
   } catch {
-  }
-}
-
-export function findInputEl(): HTMLElement | null {
-  const selectors = [
-    '[data-testid="user-input"]',
-    'div.ProseMirror[contenteditable="true"]',
-    'div[contenteditable="true"][role="textbox"]',
-    'div[contenteditable="true"]'
-  ];
-  for (const sel of selectors) {
-    const el = document.querySelector(sel);
-    if (el) return el as HTMLElement;
-  }
-  return null;
-}
-
-export function getInputText(): string {
-  if (!TRACK.inputEl || !document.body.contains(TRACK.inputEl)) {
-    TRACK.inputEl = findInputEl();
-  }
-  if (!TRACK.inputEl) return '';
-  return TRACK.inputEl.textContent?.trim() || '';
-}
-
-export function setInputText(text: string): void {
-  if (!TRACK.inputEl) return;
-  TRACK.inputEl.textContent = text;
-  TRACK.inputEl.dispatchEvent(new InputEvent('input', { bubbles: true }));
-  TRACK.inputEl.dispatchEvent(new Event('change', { bubbles: true }));
-  
-  const range = document.createRange();
-  const sel = window.getSelection();
-  range.selectNodeContents(TRACK.inputEl);
-  range.collapse(false);
-  sel?.removeAllRanges();
-  sel?.addRange(range);
-  TRACK.inputEl.focus();
-}
-
-export function showRefinementOverlay(result: RefinementResult): void {
-  const overlay = document.getElementById('cut-refine-overlay');
-  if (!overlay) return;
-  overlay.style.display = 'flex';
-  
-  (document.getElementById('cut-orig-text') as HTMLElement).textContent = result.original;
-  (document.getElementById('cut-refined-text') as HTMLElement).textContent = result.refined;
-  (document.getElementById('cut-orig-tokens') as HTMLElement).textContent = '~' + result.originalTokenEstimate + ' tokens';
-  (document.getElementById('cut-refined-tokens') as HTMLElement).textContent = '~' + result.refinedTokenEstimate + ' tokens';
-
-  const savingsEl = document.getElementById('cut-refine-savings') as HTMLElement;
-  const statusEl = document.getElementById('cut-refine-status') as HTMLElement;
-
-  if (result.tokensSaved > 0) {
-    savingsEl.textContent = 'Saved ~' + result.tokensSaved + ' tokens (' + result.percentSaved + '%)';
-    savingsEl.style.display = '';
-    statusEl.style.display = 'none';
-  } else {
-    savingsEl.style.display = 'none';
-    statusEl.textContent = "Already optimal — no changes needed.";
-    statusEl.style.display = '';
-  }
-
-  TRACK.lastRefinement = result;
-}
-
-export function hideRefinementOverlay(): void {
-  const overlay = document.getElementById('cut-refine-overlay');
-  if (overlay) overlay.style.display = 'none';
-  const statusEl = document.getElementById('cut-refine-status');
-  if (statusEl) statusEl.style.display = 'none';
-  TRACK.refineDeepInProgress = false;
-}
-
-export function checkRefineButton(): void {
-  const refineBtn = document.getElementById("cut-refine-btn");
-  if (!refineBtn) return;
-
-  if (!TRACK.inputEl || !document.body.contains(TRACK.inputEl)) {
-    TRACK.inputEl = findInputEl();
-  }
-
-  if (!TRACK.inputEl || !document.body.contains(TRACK.inputEl)) {
-    refineBtn.style.display = "none";
-    return;
-  }
-
-  const text = TRACK.inputEl.textContent?.trim() || "";
-  if (text.length > 20) {
-    refineBtn.style.display = "block";
-    const rect = TRACK.inputEl.getBoundingClientRect();
-    refineBtn.style.top = `${rect.top - 34}px`;
-    refineBtn.style.left = `${rect.left}px`;
-  } else {
-    refineBtn.style.display = "none";
   }
 }
 

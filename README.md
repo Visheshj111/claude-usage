@@ -18,7 +18,7 @@ Not affiliated with Anthropic.
 - **Full dashboard** — detailed historical usage data and trends.
 - **Chat export** — export individual conversations or bulk export your chat history.
 - **Rate-limit alerts** — desktop notifications when you approach or hit a rate limit, with a live countdown to reset.
-- **Composer refinements** — inline message refinement tools within the Claude composer.
+- **AI prompt refinement** — an explicit inline **✦ Refine** action uses the official Anthropic Messages API to improve a draft's clarity, context, constraints, and output contract; review the result before replacing your draft.
 - **Peak hours detection** — identifies high-usage periods and displays them in the dashboard.
 - **SPA navigation support** — automatically detects page transitions on Claude.ai (a single-page application) and re-scans for usage data.
 - **Theme-aware UI** — respects system and extension-level theme preferences.
@@ -187,11 +187,13 @@ A `MutationObserver` triggers re-detection on DOM changes, and a periodic interv
 | `cookies` | Read authentication cookies to verify logged-in status on claude.ai. |
 | `webRequest` | Intercept network requests to `api.anthropic.com` for quota header detection. |
 | `https://claude.ai/*` | Run content scripts and access the Claude.ai page. |
-| `https://api.anthropic.com/*` | Intercept API requests for usage quota headers. |
+| `https://api.anthropic.com/*` | Intercept API requests for usage quota headers and, only after an explicit Prompt Refiner action, send the selected draft to Anthropic's official Messages API. |
 
 ## Privacy
 
-All data is processed and stored **locally** in your browser's `chrome.storage`. No usage data, messages, or personal information is sent to any external server. The extension only communicates with `api.anthropic.com` to read quota headers from existing requests (it does not initiate its own network requests to Anthropic).
+Usage tracking data is processed and stored **locally** in your browser's `chrome.storage`; the extension does not send it to an extension-operated server.
+
+The Prompt Refiner is different by design: after you explicitly click **✦ Refine**, it sends only that current draft to Anthropic's official Messages API to produce a suggested rewrite. It never refines while you type, never creates a hidden Claude.ai conversation, and always shows the suggestion for review before replacing the draft. Its user-provided API key is held in extension session storage (not exposed to Claude.ai or saved in normal settings) and is cleared when the browser restarts. Anthropic API usage and billing apply.
 
 ## Chrome Web Store
 

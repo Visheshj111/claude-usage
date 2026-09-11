@@ -150,10 +150,8 @@ async function init(): Promise<void> {
   });
   cleanupFns.push(() => domObserver.disconnect());
   cleanupFns.push(() => {
-    document.getElementById('cut-refine-btn')?.remove();
     document.getElementById('cut-refine-overlay')?.remove();
-    document.getElementById('cut-composer-refine')?.remove();
-    document.getElementById('cut-composer-deep')?.remove();
+    document.getElementById('cut-composer-refiner')?.remove();
   });
 
   initComposerRefiner();
