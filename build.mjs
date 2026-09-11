@@ -1,5 +1,5 @@
 import * as esbuild from 'esbuild';
-import { cpSync, rmSync, readdirSync } from 'fs';
+import { cpSync, rmSync, readdirSync, readFileSync, writeFileSync } from 'fs';
 import { resolve, dirname, extname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -71,6 +71,14 @@ async function build() {
 
   try { cpSync(resolve(__dirname, 'src', 'watcher.js'), resolve(dist, 'watcher.js')); } catch {}
   try { cpSync(resolve(__dirname, 'icons'), resolve(dist, 'icons'), { recursive: true }); } catch {}
+  try {
+    const manifestPath = resolve(__dirname, 'manifest.json');
+    let manifestStr = readFileSync(manifestPath, 'utf8');
+    manifestStr = manifestStr.replace(/"dist\//g, '"');
+    writeFileSync(resolve(dist, 'manifest.json'), manifestStr);
+  } catch (e) {
+    console.error("Failed to copy manifest:", e);
+  }
 
   console.log('build complete');
 }
