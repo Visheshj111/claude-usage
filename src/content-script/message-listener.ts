@@ -2,7 +2,7 @@ import { getState, feedDetection } from "../backend/state-manager";
 import { handleNetworkQuota, runDetection } from "../backend/tracker";
 import { handleBgUsagePush, refreshUsageAndUI, schedulePostCompletionUsageRefresh, storeSseSnapshot } from "./usage-api";
 import { exportChat } from "./chat-export";
-import { lastMessageStats, setLastMessageStats } from "./state";
+import { lastMessageStats, setLastMessageStats, TRACK } from "./state";
 import { formatNum } from "./ui-widget";
 import type { NetworkQuota, DetectedUsage, WeeklyUsage } from "../backend/types";
 
@@ -101,6 +101,11 @@ window.addEventListener("message", ((e: MessageEvent) => {
           if (lenEl) lenEl.textContent = formatNum(totalToks) + " tok";
           if (costEl) costEl.textContent = formatNum(Math.round(totalToks * 0.003)) + " cr";
           if (cachedEl) cachedEl.textContent = cachedPct > 0 ? cachedPct + "% cached" : "0%";
+        }
+        // When the SSE stream is complete (final:true), store real token counts for scanMessages()
+        if (data.detail.final === true) {
+          TRACK.pendingRealTokensSent = data.detail.inputTokens ?? null;
+          TRACK.pendingRealTokensReceived = data.detail.outputTokens ?? null;
         }
       }
       break;

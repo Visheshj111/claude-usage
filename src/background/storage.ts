@@ -1,7 +1,7 @@
 import { type Settings, getSettings, DEFAULT_SETTINGS } from './settings';
 import type { DayUsage, PeriodUsage, ConversationEntry, SessionData, HourlyUsage } from './types';
 import { getState } from '../backend/state-manager';
-import { NOTIFICATIONS, STORAGE, SESSION } from '../config';
+import { NOTIFICATIONS, STORAGE, SESSION, ESTIMATED_CAPS } from '../config';
 
 function getDateKey(d?: Date): string {
   const date = d || new Date();
@@ -104,6 +104,8 @@ export async function handleUsageUpdate(data: Record<string, unknown>): Promise<
   const conversationsDb: Record<string, ConversationEntry> = (rawConvs as Record<string, ConversationEntry>) || {};
   let hourlyMessageDelta = 0;
   const convId = data.conversationId as string | undefined;
+  let deltaTokensSent = 0;
+  let deltaTokensRecv = 0;
 
   if (convId && conversationsDb[convId]) {
     const existing = conversationsDb[convId];
@@ -121,38 +123,54 @@ export async function handleUsageUpdate(data: Record<string, unknown>): Promise<
     const deltaCharsSent = Math.max(0, convCharsSent - alreadyCharsSent);
     const deltaCharsRecv = Math.max(0, convCharsRecv - alreadyCharsRecv);
 
+    deltaTokensSent = typeof data.tokensSent === 'number' && data.tokensSent > 0
+      ? data.tokensSent
+      : Math.round(deltaCharsSent / 4);
+    deltaTokensRecv = typeof data.tokensReceived === 'number' && data.tokensReceived > 0
+      ? data.tokensReceived
+      : Math.round(deltaCharsRecv / 4);
+
     if (deltaSent > 0 || deltaRecv > 0) {
       dayUsage.messagesSent += deltaSent;
       dayUsage.messagesReceived += deltaRecv;
       dayUsage.charsSent += deltaCharsSent;
       dayUsage.charsReceived += deltaCharsRecv;
-      dayUsage.tokensSent += Math.round(deltaCharsSent / 4);
-      dayUsage.tokensReceived += Math.round(deltaCharsRecv / 4);
+      dayUsage.tokensSent += deltaTokensSent;
+      dayUsage.tokensReceived += deltaTokensRecv;
 
       periodUsage.messagesSent += deltaSent;
       periodUsage.messagesReceived += deltaRecv;
       periodUsage.charsSent += deltaCharsSent;
       periodUsage.charsReceived += deltaCharsRecv;
-      periodUsage.tokensSent += Math.round(deltaCharsSent / 4);
-      periodUsage.tokensReceived += Math.round(deltaCharsRecv / 4);
+      periodUsage.tokensSent += deltaTokensSent;
+      periodUsage.tokensReceived += deltaTokensRecv;
       hourlyMessageDelta += deltaSent + deltaRecv;
     }
   } else {
     const incomingSent = (data.messagesSent as number) || 0;
     const incomingRecv = (data.messagesReceived as number) || 0;
+    const incomingCharsSent = (data.charsSent as number) || 0;
+    const incomingCharsRecv = (data.charsReceived as number) || 0;
+    deltaTokensSent = typeof data.tokensSent === 'number' && data.tokensSent > 0
+      ? data.tokensSent
+      : Math.round(incomingCharsSent / 4);
+    deltaTokensRecv = typeof data.tokensReceived === 'number' && data.tokensReceived > 0
+      ? data.tokensReceived
+      : Math.round(incomingCharsRecv / 4);
+
     dayUsage.messagesSent += incomingSent;
     dayUsage.messagesReceived += incomingRecv;
-    dayUsage.charsSent += (data.charsSent as number) || 0;
-    dayUsage.charsReceived += (data.charsReceived as number) || 0;
-    dayUsage.tokensSent += (data.tokensSent as number) || 0;
-    dayUsage.tokensReceived += (data.tokensReceived as number) || 0;
+    dayUsage.charsSent += incomingCharsSent;
+    dayUsage.charsReceived += incomingCharsRecv;
+    dayUsage.tokensSent += deltaTokensSent;
+    dayUsage.tokensReceived += deltaTokensRecv;
 
     periodUsage.messagesSent += incomingSent;
     periodUsage.messagesReceived += incomingRecv;
-    periodUsage.charsSent += (data.charsSent as number) || 0;
-    periodUsage.charsReceived += (data.charsReceived as number) || 0;
-    periodUsage.tokensSent += (data.tokensSent as number) || 0;
-    periodUsage.tokensReceived += (data.tokensReceived as number) || 0;
+    periodUsage.charsSent += incomingCharsSent;
+    periodUsage.charsReceived += incomingCharsRecv;
+    periodUsage.tokensSent += deltaTokensSent;
+    periodUsage.tokensReceived += deltaTokensRecv;
     hourlyMessageDelta += incomingSent + incomingRecv;
   }
 
@@ -206,8 +224,8 @@ export async function handleUsageUpdate(data: Record<string, unknown>): Promise<
       conv.charsSent = Math.max(conv.charsSent, convCharsSent);
       conv.charsReceived = Math.max(conv.charsReceived, convCharsRecv);
       conv.totalMessages = conv.messagesSent + conv.messagesReceived;
-      conv.tokensSent = Math.round(conv.charsSent / 4);
-      conv.tokensReceived = Math.round(conv.charsReceived / 4);
+      conv.tokensSent = (conv.tokensSent || 0) + deltaTokensSent;
+      conv.tokensReceived = (conv.tokensReceived || 0) + deltaTokensRecv;
     }
     if (data.conversationTitle) conv.title = data.conversationTitle as string;
   }
@@ -298,12 +316,30 @@ export async function getAllData(): Promise<Record<string, unknown>> {
     : computeNextReset(currentSettings.resetPeriod, windowStartTs);
   const resetIn = nextReset > 0 ? nextReset - Date.now() : 0;
 
-  const sessionLimit = backendState.sessionLimit ?? limits.dailyMessages;
-  const sessionMessagesUsedFromRemaining = backendState.remainingMessages !== null
-    ? Math.max(0, sessionLimit - backendState.remainingMessages)
-    : null;
-  const sessionMessagesUsed = backendState.sessionMessagesUsed ?? sessionMessagesUsedFromRemaining ?? msgsUsed;
-  const remainingMessages = backendState.remainingMessages ?? Math.max(0, sessionLimit - sessionMessagesUsed);
+  const planTier = backendState.planTier;
+  const tierCap = planTier && planTier !== "unknown" && ESTIMATED_CAPS[planTier]?.session
+    ? ESTIMATED_CAPS[planTier].session
+    : (planTier === "pro" ? 45 : (planTier === "free" ? 15 : (limits.dailyMessages || 45)));
+
+  const sessionLimit = backendState.sessionLimit ?? tierCap;
+
+  let sessionMessagesUsed: number;
+  let remainingMessages: number;
+
+  if (backendState.remainingMessages !== null) {
+    remainingMessages = Math.max(0, backendState.remainingMessages);
+    sessionMessagesUsed = Math.max(0, sessionLimit - remainingMessages);
+  } else if (backendState.sessionMessagesUsed !== null) {
+    sessionMessagesUsed = Math.max(0, backendState.sessionMessagesUsed);
+    remainingMessages = Math.max(0, sessionLimit - sessionMessagesUsed);
+  } else if (backendState.usagePercent !== null) {
+    sessionMessagesUsed = Math.min(sessionLimit, Math.round(sessionLimit * (backendState.usagePercent / 100)));
+    remainingMessages = Math.max(0, sessionLimit - sessionMessagesUsed);
+  } else {
+    sessionMessagesUsed = Math.min(sessionLimit, msgsUsed);
+    remainingMessages = Math.max(0, sessionLimit - sessionMessagesUsed);
+  }
+
   const sessionPct = backendState.usagePercent ?? (sessionLimit > 0
     ? Math.min(100, Math.round((sessionMessagesUsed / sessionLimit) * 100))
     : null);

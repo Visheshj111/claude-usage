@@ -54,6 +54,7 @@ function renderOverview(d: OverviewData): void {
   const msgsTotal = d.sessionLimit || remaining.messagesTotal || 100;
   const apiRemaining = typeof remaining.messages === 'number' ? remaining.messages : null;
   const msgs = d.sessionMessagesUsed ?? (apiRemaining !== null ? Math.max(0, msgsTotal - apiRemaining) : localMsgs);
+  const msgsRemaining = apiRemaining !== null ? apiRemaining : Math.max(0, msgsTotal - msgs);
   const tokens = (daily.tokensSent || 0) + (daily.tokensReceived || 0);
   const tokensTotal = remaining.tokensTotal || 50000;
 
@@ -78,7 +79,7 @@ function renderOverview(d: OverviewData): void {
 
   setBar('bar-messages', msgPct);
   setBar('bar-messages-mini', msgPct);
-  setNums('nums-messages', msgs, msgsTotal, false);
+  setNums('nums-messages', msgs, msgsTotal, false, msgsRemaining);
   setText('pct-messages', msgPct + '%');
 
   setBar('bar-tokens', tokPct);
@@ -188,8 +189,10 @@ async function renderUsageSquares(): Promise<void> {
 
   grid.style.display = 'grid';
   grid.style.gridAutoFlow = 'column';
-  grid.style.gridTemplateRows = 'repeat(7, 1fr)';
+  grid.style.gridAutoColumns = '14px';
+  grid.style.gridTemplateRows = 'repeat(7, 14px)';
   grid.style.gap = '4px';
+  grid.style.width = 'max-content';
   grid.style.minWidth = '0';
   grid.style.padding = '8px 0';
   
@@ -243,9 +246,15 @@ function setText(id: string, val: string | number | null | undefined): void {
   if (el) el.textContent = String(val ?? '0');
 }
 
-function setNums(id: string, used: number, total: number, isTokens: boolean = false): void {
+function setNums(id: string, used: number, total: number, isTokens: boolean = false, remaining?: number): void {
   const el = document.getElementById(id);
-  if (el) el.textContent = `${formatNum(used)} of ${formatNum(total)} ${isTokens ? 'tokens' : 'messages'} used`;
+  if (!el) return;
+  if (isTokens) {
+    el.textContent = `${formatNum(used)} of ${formatNum(total)} tokens used`;
+  } else {
+    const canSend = remaining !== undefined ? remaining : Math.max(0, total - used);
+    el.textContent = `${formatNum(used)} of ${formatNum(total)} used · ${formatNum(canSend)} can be sent`;
+  }
 }
 
 function setBar(id: string, pct: number): void {

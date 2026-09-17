@@ -7,3 +7,5 @@ dist/
 Thumbs.db
 *.tsbuildinfo
 coverage/
+.agents/
+skills-lock.json

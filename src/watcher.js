@@ -109,9 +109,30 @@
     var buf = '';
     var doneEmitted = false;
 
+    // Accumulate token counts across the whole stream for accurate final totals
+    var accInputTokens = 0;
+    var accOutputTokens = 0;
+    var accCacheCreation = 0;
+    var accCacheRead = 0;
+    var gotAnyTokens = false;
+
     function markDone() {
       if (doneEmitted) return;
       doneEmitted = true;
+      // Emit final accurate token stats once the stream is complete
+      if (gotAnyTokens) {
+        window.postMessage({
+          type: 'cut-message-stats', detail: {
+            inputTokens: accInputTokens,
+            outputTokens: accOutputTokens,
+            cacheCreationTokens: accCacheCreation,
+            cacheReadTokens: accCacheRead,
+            totalTokens: accInputTokens + accOutputTokens,
+            timestamp: Date.now(),
+            final: true
+          }
+        }, window.location.origin);
+      }
       emitCompletionDone(orgId);
     }
 
@@ -148,9 +169,19 @@
               debugLog('watcher: firing cut-quota. type=' + obj.type + ' has_nested_ml=' + !!obj.message_limit + ' has_windows=' + !!obj.windows);
               window.postMessage({ type: 'cut-quota', detail: obj }, window.location.origin);
             }
-            // Capture token usage from message_start event
+            // Accumulate input tokens from message_start (output_tokens is 0 here)
             if (obj.type === 'message_start' && obj.message && obj.message.usage) {
-              emitMessageStats(obj.message.usage);
+              var u = obj.message.usage;
+              if (typeof u.input_tokens === 'number') { accInputTokens = u.input_tokens; gotAnyTokens = true; }
+              if (typeof u.cache_creation_input_tokens === 'number') accCacheCreation = u.cache_creation_input_tokens;
+              if (typeof u.cache_read_input_tokens === 'number') accCacheRead = u.cache_read_input_tokens;
+              // Also emit immediately for the context widget (output_tokens will update)
+              emitMessageStats(u);
+            }
+            // message_delta carries cumulative output_tokens — last value seen is the final total
+            if (obj.type === 'message_delta' && obj.usage && typeof obj.usage.output_tokens === 'number') {
+              accOutputTokens = obj.usage.output_tokens;
+              gotAnyTokens = true;
             }
           } catch (e) { }
         }

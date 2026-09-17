@@ -24,6 +24,6 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ['dist/', 'node_modules/', 'src/watcher.js'],
+    ignores: ['dist/', 'node_modules/', 'src/watcher.js', 'src/dashboard/iconify-icon.min.js'],
   },
 );

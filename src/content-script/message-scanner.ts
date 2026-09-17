@@ -3,6 +3,7 @@ import { TRACK } from './state';
 import { updateUI } from './ui-widget';
 import { runDetection } from '../backend/tracker';
 import { SESSION } from '../config';
+import { refreshUsageAndUI } from './usage-api';
 
 
 export const MESSAGE_SELECTORS = [
@@ -83,6 +84,7 @@ export function onUrlChanged(): void {
   TRACK.conversationTitle = extractTitle();
   processPage();
   runDetection("navigation");
+  void refreshUsageAndUI(true);
 }
 
 export function ensureSession(): void {
@@ -141,6 +143,18 @@ export function scanMessages(): void {
   const dca = assistantCount - TRACK.lastAssistantCount;
 
   if (du > 0 || da > 0) {
+    const realTokensSent = TRACK.pendingRealTokensSent;
+    const realTokensRecv = TRACK.pendingRealTokensReceived;
+    TRACK.pendingRealTokensSent = null;
+    TRACK.pendingRealTokensReceived = null;
+
+    const tokensSent = (typeof realTokensSent === 'number' && realTokensSent > 0)
+      ? realTokensSent
+      : Math.round(du / _tokenDivisor);
+    const tokensReceived = (typeof realTokensRecv === 'number' && realTokensRecv > 0)
+      ? realTokensRecv
+      : Math.round(da / _tokenDivisor);
+
     const data = {
       conversationId: TRACK.conversationId,
       conversationTitle: TRACK.conversationTitle,
@@ -148,8 +162,8 @@ export function scanMessages(): void {
       messagesReceived: dca,
       charsSent: du,
       charsReceived: da,
-      tokensSent: Math.round(du / _tokenDivisor),
-      tokensReceived: Math.round(da / _tokenDivisor),
+      tokensSent,
+      tokensReceived,
       isNewConversation: TRACK.isNewConversation,
       convTotalMessagesSent: userCount,
       convTotalMessagesReceived: assistantCount,

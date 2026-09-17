@@ -30,4 +30,9 @@ export const TRACK = {
   sessionStarted: false,
   sessionCheckTimer: null as ReturnType<typeof setInterval> | null,
   uiUpdateInterval: null as ReturnType<typeof setInterval> | null,
+  // Real token counts sourced from SSE (input=sent, output=received).
+  // Set to non-null when a final cut-message-stats event has been received for this turn.
+  // Cleared to null after being consumed by scanMessages() so char/4 remains the fallback.
+  pendingRealTokensSent: null as number | null,
+  pendingRealTokensReceived: null as number | null,
 };
