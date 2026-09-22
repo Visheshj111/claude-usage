@@ -265,7 +265,13 @@ async function render(): Promise<void> {
   const sessionNums = document.getElementById('session-nums');
   const tokenNums = document.getElementById('token-nums');
   if (sessionNums) sessionNums.textContent = msgsTotal !== null ? `${formatNum(msgsUsed)} / ${formatNum(msgsTotal)}` : '— / —';
-  if (tokenNums) tokenNums.textContent = tokensTotal !== null ? `${formatNum(tokensUsed)} / ${formatNum(tokensTotal)}` : '— / —';
+  if (tokenNums) {
+    if (tokensTotal) {
+      tokenNums.textContent = `${formatNum(tokensUsed)} / ${formatNum(tokensTotal)}`;
+    } else {
+      tokenNums.textContent = `${formatNum(tokensUsed)} used`;
+    }
+  }
 
   const dot = document.getElementById('session-dot');
   const sessionData = session as { startTime?: number; conversations?: number } | null;

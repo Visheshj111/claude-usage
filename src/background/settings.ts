@@ -21,7 +21,7 @@ export const DEFAULT_SETTINGS: Settings = {
   refinerEnabled: true,
   limits: {
     dailyMessages: 45,
-    dailyTokens: 90000,
+    dailyTokens: 0,
     sessionWindowMs: 5 * 60 * 60 * 1000,
   },
 };

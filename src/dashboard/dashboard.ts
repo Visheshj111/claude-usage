@@ -56,7 +56,7 @@ function renderOverview(d: OverviewData): void {
   const msgs = d.sessionMessagesUsed ?? (apiRemaining !== null ? Math.max(0, msgsTotal - apiRemaining) : localMsgs);
   const msgsRemaining = apiRemaining !== null ? apiRemaining : Math.max(0, msgsTotal - msgs);
   const tokens = (daily.tokensSent || 0) + (daily.tokensReceived || 0);
-  const tokensTotal = remaining.tokensTotal || 50000;
+  const tokensTotal = remaining.tokensTotal || 0;
 
   const periodBadge = document.getElementById('period-badge');
   const overviewPeriod = document.getElementById('overview-period');
@@ -66,7 +66,7 @@ function renderOverview(d: OverviewData): void {
   setText('ov-messages', formatNum(msgs));
   setText('ov-messages-of', `/ ${formatNum(msgsTotal)}`);
   setText('ov-tokens', formatNum(tokens));
-  setText('ov-tokens-of', `/ ${formatNum(tokensTotal)}`);
+  setText('ov-tokens-of', tokensTotal > 0 ? `/ ${formatNum(tokensTotal)}` : '');
   setText('ov-sent', formatNum(daily.messagesSent));
   setText('ov-recv', formatNum(daily.messagesReceived));
   setText('ov-convs', formatNum(daily.conversations));
@@ -75,7 +75,7 @@ function renderOverview(d: OverviewData): void {
   if (timer) timer.textContent = session?.startTime ? formatDuration(Date.now() - session.startTime) : '--:--:--';
 
   const msgPct = d.sessionPct != null ? d.sessionPct : Math.min(100, Math.round((msgs / msgsTotal) * 100));
-  const tokPct = Math.min(100, Math.round((tokens / tokensTotal) * 100));
+  const tokPct = tokensTotal > 0 ? Math.min(100, Math.round((tokens / tokensTotal) * 100)) : 0;
 
   setBar('bar-messages', msgPct);
   setBar('bar-messages-mini', msgPct);
@@ -250,7 +250,11 @@ function setNums(id: string, used: number, total: number, isTokens: boolean = fa
   const el = document.getElementById(id);
   if (!el) return;
   if (isTokens) {
-    el.textContent = `${formatNum(used)} of ${formatNum(total)} tokens used`;
+    if (total > 0) {
+      el.textContent = `${formatNum(used)} of ${formatNum(total)} tokens used`;
+    } else {
+      el.textContent = `${formatNum(used)} tokens used`;
+    }
   } else {
     const canSend = remaining !== undefined ? remaining : Math.max(0, total - used);
     el.textContent = `${formatNum(used)} of ${formatNum(total)} used · ${formatNum(canSend)} can be sent`;
