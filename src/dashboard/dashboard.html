@@ -26,9 +26,9 @@
         </div>
       </div>
       <div class="flex items-center gap-2">
-        <button id="period-badge" class="min-h-11 rounded-lg border border-border bg-card px-3 text-sm text-muted-foreground transition hover:border-primary hover:text-foreground">
+        <div id="period-badge" class="min-h-11 rounded-lg border border-border bg-card px-3 text-sm text-muted-foreground">
           <iconify-icon icon="lucide:calendar" class="mr-2 text-base"></iconify-icon>Last 14 days
-        </button>
+        </div>
         <button id="db-force-reload" class="flex min-h-11 w-11 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition hover:border-primary hover:text-foreground" aria-label="Refresh usage data">
           <iconify-icon icon="lucide:refresh-cw" class="text-lg"></iconify-icon>
         </button>
@@ -155,7 +155,7 @@
             <h2 class="font-heading text-lg font-semibold">Day by Day</h2>
             <p id="history-count" class="mt-1 text-sm text-muted-foreground">Your recent Claude activity.</p>
           </div>
-          <button class="min-h-11 rounded-lg px-3 text-sm text-primary transition hover:bg-accent">Export</button>
+          <button id="db-export-history" class="min-h-11 rounded-lg px-3 text-sm text-primary transition hover:bg-accent">Export</button>
         </div>
         <div class="overflow-x-auto">
           <table id="history-table" class="w-full min-w-[620px] text-left text-sm">

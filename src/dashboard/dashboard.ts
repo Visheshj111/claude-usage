@@ -19,6 +19,8 @@ document.addEventListener('DOMContentLoaded', () => {
     await refresh();
     if (btn) setTimeout(() => { btn.style.transform = ''; }, 200);
   });
+
+  document.getElementById('db-export-history')?.addEventListener('click', handleExportHistory);
 });
 
 async function applyDashboardTheme(): Promise<void> {
@@ -328,6 +330,34 @@ function heatLevel(count: number, max: number): number {
 }
 
 function capitalize(s: string): string { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+async function handleExportHistory(): Promise<void> {
+  const result: [string, DayData][] | null = await chrome.runtime.sendMessage({ type: 'GET_HISTORY' });
+  if (!result || result.length === 0) {
+    alert('No history data to export yet.');
+    return;
+  }
+
+  const header = 'Date,Sent,Received,Tokens,Conversations';
+  const rows = result.map(([date, day]) => {
+    const sent = day.messagesSent || 0;
+    const received = day.messagesReceived || 0;
+    const tokens = (day.tokensSent || 0) + (day.tokensReceived || 0);
+    const convs = day.conversations || 0;
+    return `${date},${sent},${received},${tokens},${convs}`;
+  });
+
+  const csv = [header, ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `claude-usage-history-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 function esc(str: string): string {
   const div = document.createElement('div');
