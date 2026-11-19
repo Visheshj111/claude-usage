@@ -1,366 +1,273 @@
-export {};
+import {
+  buildDailySeries,
+  count,
+  dateKey,
+  displayDate,
+  escapeHtml,
+  numberLabel,
+  renderHeatmap,
+  renderHourly,
+  renderTrend,
+  sumHours,
+  summarize,
+  type DailyPoint,
+  type History,
+  type Metric,
+} from '../shared/analytics';
+import type { ConversationEntry, DayUsage, HourlyUsage } from '../background/types';
 
-const LIMIT_DAYS = 14;
-const _themeMedia = window.matchMedia('(prefers-color-scheme: dark)');
-let _themeMode = 'auto';
+interface DashboardData {
+  daily?: Partial<DayUsage>;
+  sessionPct?: number | null;
+  source?: string;
+  isRateLimited?: boolean;
+  resetTimestamp?: number | null;
+  resetIn?: number;
+  weeklyUsage?: { usagePercent?: number | null };
+  conversations?: Record<string, ConversationEntry>;
+  settings?: { themeMode?: string };
+}
+
+let history: History = [];
+let hourly: HourlyUsage = {};
+let days = 14;
+let metric: Metric = 'messages';
+let busy = false;
+let resetAt = 0;
+let mode = 'auto';
+let historySignature = '';
+let conversationSignature = '';
+const media = window.matchMedia('(prefers-color-scheme: dark)');
+const element = (id: string) => document.getElementById(id)!;
+const text = (id: string, value: string) => {
+  element(id).textContent = value;
+};
+
+function applyTheme(theme = mode): void {
+  mode = theme;
+  document.documentElement.classList.toggle('dark', theme === 'dark' || (theme === 'auto' && media.matches));
+  localStorage.setItem('themeMode', theme);
+}
+
+function notice(message = ''): void {
+  text('page-status', message);
+  element('page-status').hidden = !message;
+}
 
 document.addEventListener('DOMContentLoaded', () => {
-  applyDashboardTheme();
-  _themeMedia.addEventListener('change', () => {
-    if (_themeMode === 'auto') applyThemeMode('auto');
+  media.addEventListener('change', () => applyTheme());
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.settings) {
+      const settings = changes.settings.newValue as { themeMode?: string } | undefined;
+      applyTheme(settings?.themeMode || 'auto');
+    }
   });
-  refresh();
-  setInterval(refresh, 10000);
-
-  document.getElementById('db-force-reload')?.addEventListener('click', async () => {
-    const btn = document.getElementById('db-force-reload');
-    if (btn) btn.style.transform = 'rotate(180deg)';
-    await chrome.runtime.sendMessage({ type: 'FORCE_FETCH_USAGE' });
-    await refresh();
-    if (btn) setTimeout(() => { btn.style.transform = ''; }, 200);
+  document.querySelectorAll<HTMLButtonElement>('[data-range]').forEach((button) => {
+    button.addEventListener('click', () => {
+      days = Number(button.dataset.range);
+      document
+        .querySelectorAll('[data-range]')
+        .forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
+      renderHistory();
+    });
   });
-
-  document.getElementById('db-export-history')?.addEventListener('click', handleExportHistory);
+  document.querySelectorAll<HTMLButtonElement>('[data-metric]').forEach((button) => {
+    button.addEventListener('click', () => {
+      metric = button.dataset.metric as Metric;
+      document
+        .querySelectorAll('[data-metric]')
+        .forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
+      renderHistory();
+    });
+  });
+  element('db-force-reload').addEventListener('click', () => {
+    void refresh(true);
+  });
+  element('db-export-history').addEventListener('click', exportHistory);
+  void refresh();
+  setInterval(() => {
+    if (document.visibilityState !== 'hidden') void refresh();
+  }, 15000);
+  setInterval(renderCountdown, 1000);
 });
 
-async function applyDashboardTheme(): Promise<void> {
-  const { settings } = await chrome.storage.local.get('settings');
-  const s = (settings || {}) as { themeMode?: string };
-  applyThemeMode(s.themeMode || 'auto');
-}
-
-function applyThemeMode(themeMode: string): void {
-  _themeMode = themeMode || 'auto';
-  localStorage.setItem('themeMode', _themeMode);
-  const isDark = _themeMode === 'dark' ||
-    (_themeMode === 'auto' && _themeMedia.matches);
-  document.documentElement.classList.toggle('dark', isDark);
-}
-
-async function refresh(): Promise<void> {
-  const data = await chrome.runtime.sendMessage({ type: 'GET_ALL_DATA' });
-  if (!data) return;
-  renderOverview(data);
-  renderHistory();
-  renderUsageSquares();
-  renderConversations(data);
-}
-
-interface DayData { messagesSent?: number; messagesReceived?: number; tokensSent?: number; tokensReceived?: number; conversations?: number; }
-interface SessionData { startTime?: number; }
-interface OverviewData { daily?: DayData; remaining?: { messages?: number; messagesTotal?: number; tokensTotal?: number }; resetIn?: number; resetTimestamp?: number; session?: SessionData; settings?: { resetPeriod?: string }; sessionPct?: number | null; sessionMessagesUsed?: number | null; sessionLimit?: number | null; }
-
-function renderOverview(d: OverviewData): void {
-  const { daily = {}, remaining = {}, resetIn = 0, resetTimestamp, session, settings = {} } = d;
-  const localMsgs = (daily.messagesSent || 0) + (daily.messagesReceived || 0);
-  const msgsTotal = d.sessionLimit || remaining.messagesTotal || 100;
-  const apiRemaining = typeof remaining.messages === 'number' ? remaining.messages : null;
-  const msgs = d.sessionMessagesUsed ?? (apiRemaining !== null ? Math.max(0, msgsTotal - apiRemaining) : localMsgs);
-  const msgsRemaining = apiRemaining !== null ? apiRemaining : Math.max(0, msgsTotal - msgs);
-  const tokens = (daily.tokensSent || 0) + (daily.tokensReceived || 0);
-  const tokensTotal = remaining.tokensTotal || 0;
-
-  const periodBadge = document.getElementById('period-badge');
-  const overviewPeriod = document.getElementById('overview-period');
-  if (periodBadge) periodBadge.textContent = settings.resetPeriod || 'daily';
-  if (overviewPeriod) overviewPeriod.textContent = capitalize(settings.resetPeriod || 'daily');
-
-  setText('ov-messages', formatNum(msgs));
-  setText('ov-messages-of', `/ ${formatNum(msgsTotal)}`);
-  setText('ov-tokens', formatNum(tokens));
-  setText('ov-tokens-of', tokensTotal > 0 ? `/ ${formatNum(tokensTotal)}` : '');
-  setText('ov-sent', formatNum(daily.messagesSent));
-  setText('ov-recv', formatNum(daily.messagesReceived));
-  setText('ov-convs', formatNum(daily.conversations));
-
-  const timer = document.getElementById('ov-session');
-  if (timer) timer.textContent = session?.startTime ? formatDuration(Date.now() - session.startTime) : '--:--:--';
-
-  const msgPct = d.sessionPct != null ? d.sessionPct : Math.min(100, Math.round((msgs / msgsTotal) * 100));
-  const tokPct = tokensTotal > 0 ? Math.min(100, Math.round((tokens / tokensTotal) * 100)) : 0;
-
-  setBar('bar-messages', msgPct);
-  setBar('bar-messages-mini', msgPct);
-  setNums('nums-messages', msgs, msgsTotal, false, msgsRemaining);
-  setText('pct-messages', msgPct + '%');
-
-  setBar('bar-tokens', tokPct);
-  setBar('bar-tokens-mini', tokPct);
-  setNums('nums-tokens', tokens, tokensTotal, true);
-  setText('pct-tokens', tokPct + '%');
-
-  const resetEl = document.getElementById('reset-timer');
-  if (resetEl) resetEl.textContent = resetTimestamp && resetTimestamp > Date.now() ? formatDuration(resetTimestamp - Date.now()) : formatDuration(resetIn);
-
-  const dot = document.getElementById('status-dot');
-  if (dot) dot.style.background = session?.startTime ? 'var(--safe)' : 'var(--text-muted)';
-  const lbl = document.getElementById('status-label');
-  if (lbl) lbl.textContent = session?.startTime ? 'Tracking' : 'Idle';
-}
-
-async function renderHistory(): Promise<void> {
-  const result: [string, DayData][] | null = await chrome.runtime.sendMessage({ type: 'GET_HISTORY' });
-  const tbody = document.getElementById('history-body');
-  const countEl = document.getElementById('history-count');
-
-  if (!result || result.length === 0) {
-    if (tbody) tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No data yet.</td></tr>';
-    if (countEl) countEl.textContent = '0 days';
-    return;
-  }
-
-  const days = result.slice(-LIMIT_DAYS).reverse();
-  if (countEl) countEl.textContent = `${days.length} days`;
-
-  if (tbody) {
-    tbody.innerHTML = days.map(([date, day]: [string, DayData]) => {
-      const total = (day.messagesSent || 0) + (day.messagesReceived || 0);
-      const tokens = (day.tokensSent || 0) + (day.tokensReceived || 0);
-      const maxTotal = Math.max(...result.map(([, r]: [string, DayData]) => (r.messagesSent || 0) + (r.messagesReceived || 0)), 1);
-      const barW = Math.round((total / maxTotal) * 100);
-      return `<tr>
-        <td class="px-5 py-4 font-medium">${date}</td>
-        <td class="px-3 py-4">${formatNum(day.messagesSent)}</td>
-        <td class="px-3 py-4">${formatNum(day.messagesReceived)}</td>
-        <td class="px-3 py-4 tabular-nums">${formatNum(tokens)}</td>
-        <td class="px-3 py-4">${formatNum(day.conversations)}</td>
-        <td class="px-5 py-4">
-          <div class="h-2 w-24 overflow-hidden rounded-full bg-accent">
-            <div class="h-full bg-primary" style="width:${barW}%"></div>
-          </div>
-        </td>
-      </tr>`;
-    }).join('');
-  }
-}
-
-async function renderUsageSquares(): Promise<void> {
-  const result: [string, DayData][] | null = await chrome.runtime.sendMessage({ type: 'GET_HISTORY' });
-  const grid = document.getElementById('hours-heatmap');
-  const range = document.getElementById('heatmap-range');
-  
-  const sectionTitle = grid?.closest('section')?.querySelector('h2');
-  if (sectionTitle) sectionTitle.textContent = 'Usage Squares';
-
-  if (!grid || !result) return;
-
-  let earliestKey = undefined;
-  if (result.length > 0) {
-    const dates = result.map(([date]) => date).sort();
-    earliestKey = dates[0];
-  }
-  const days = getRecentDateKeys(earliestKey);
-  
-  const maxDaily = Math.max(...result.map(([, day]) => (day.messagesSent || 0) + (day.messagesReceived || 0)), 0);
-
-  if (range) range.textContent = `${days.length} days`;
-
-  const dataMap = new Map<string, number>();
-  for (const [date, day] of result) {
-    dataMap.set(date, (day.messagesSent || 0) + (day.messagesReceived || 0));
-  }
-
-  // Reverse so it's oldest to newest
-  const datesChronological = days.slice().reverse();
-  
-  // Calculate padding for the first week so days align correctly (0 = Sun, 1 = Mon, etc.)
-  let padEmpty = 0;
-  if (datesChronological.length > 0) {
-    const firstDateMatch = datesChronological[0].match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (firstDateMatch) {
-      const firstDate = new Date(Number(firstDateMatch[1]), Number(firstDateMatch[2]) - 1, Number(firstDateMatch[3]));
-      padEmpty = firstDate.getDay(); 
+async function refresh(force = false): Promise<void> {
+  if (busy) return;
+  busy = true;
+  const button = element('db-force-reload') as HTMLButtonElement;
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  try {
+    let refreshFailed = false;
+    if (force) {
+      const response = await chrome.runtime.sendMessage({ type: 'FORCE_FETCH_USAGE' });
+      refreshFailed = response?.success !== true;
     }
+    const [data, records, hours] = await Promise.all([
+      chrome.runtime.sendMessage({ type: 'GET_ALL_DATA' }) as Promise<DashboardData>,
+      chrome.runtime.sendMessage({ type: 'GET_HISTORY' }) as Promise<History>,
+      chrome.runtime.sendMessage({ type: 'GET_HOURLY_USAGE' }) as Promise<HourlyUsage>,
+    ]);
+    if (!data || !Array.isArray(records) || !hours) throw new Error('No response');
+    applyTheme(data.settings?.themeMode || 'auto');
+    renderQuota(data);
+    history = records;
+    hourly = hours;
+    const signature = JSON.stringify([records, hours, dateKey(new Date())]);
+    if (signature !== historySignature) {
+      historySignature = signature;
+      renderHistory();
+      renderHeatmap(element('activity-heatmap'), buildDailySeries(history, 90));
+    }
+    const conversations = JSON.stringify(data.conversations || {});
+    if (conversations !== conversationSignature) {
+      conversationSignature = conversations;
+      renderConversations(data.conversations || {});
+    }
+    text(
+      'updated-at',
+      `History updated ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`,
+    );
+    notice(
+      refreshFailed
+        ? 'Could not refresh Claude limits. Showing locally stored data; open Claude.ai and try again.'
+        : '',
+    );
+  } catch {
+    notice('Could not load fresh usage. Your saved data is unchanged. Reload the extension and try again.');
+  } finally {
+    busy = false;
+    button.disabled = false;
+    button.setAttribute('aria-busy', 'false');
   }
-
-  const cells: string[] = [];
-  for (let i = 0; i < padEmpty; i++) {
-    cells.push(`<div style="width: 14px; height: 14px; background: transparent;"></div>`);
-  }
-
-  for (const dateKey of datesChronological) {
-    const count = dataMap.get(dateKey) || 0;
-    const level = heatLevel(count, maxDaily);
-    const label = `${formatHeatmapDate(dateKey)} - ${formatNum(count)} messages`;
-    let bgClass = 'bg-accent';
-    if (level === 1) bgClass = 'bg-primary/30';
-    else if (level === 2) bgClass = 'bg-primary/60';
-    else if (level >= 3) bgClass = 'bg-primary';
-    cells.push(`<div class="${bgClass}" style="width: 14px; height: 14px; border-radius: 2px;" title="${esc(label)}" aria-label="${esc(label)}"></div>`);
-  }
-
-  grid.style.display = 'grid';
-  grid.style.gridAutoFlow = 'column';
-  grid.style.gridAutoColumns = '14px';
-  grid.style.gridTemplateRows = 'repeat(7, 14px)';
-  grid.style.gap = '4px';
-  grid.style.width = 'max-content';
-  grid.style.minWidth = '0';
-  grid.style.padding = '8px 0';
-  
-  grid.innerHTML = cells.join('');
 }
 
-interface ConvEntry { startedAt: string; messagesSent?: number; messagesReceived?: number; tokensSent?: number; tokensReceived?: number; title?: string; }
+function renderHistory(): void {
+  const series = buildDailySeries(history, days);
+  const totals = summarize(series);
+  text('range-label', `Last ${days} days · ${displayDate(series[0].date)} – ${displayDate(series[days - 1].date)}`);
+  text('summary-messages', numberLabel(totals.messages));
+  text('summary-tokens', numberLabel(totals.tokens));
+  text('summary-active', String(totals.activeDays));
+  text('active-note', `Out of ${days} calendar days`);
+  text('summary-average', numberLabel(totals.average));
+  text('trend-total', numberLabel(totals[metric]));
+  text('trend-unit', `${metric === 'tokens' ? 'estimated tokens' : 'messages'} in this period`);
+  text(
+    'trend-note',
+    metric === 'tokens'
+      ? 'Estimated input + output tokens · Not a billing measure'
+      : 'Sent + received · Recorded on this device',
+  );
+  renderTrend(element('trend-chart'), series, metric);
+  const hours = sumHours(
+    hourly,
+    series.map((day) => day.date),
+  );
+  renderHourly(element('hourly-chart'), hours);
+  const max = Math.max(...hours);
+  text('peak-hour', max > 0 ? `Busiest: ${String(hours.indexOf(max)).padStart(2, '0')}:00` : 'Local time');
+  text('history-count', `${days} calendar days · Missing days shown as zero`);
+  element('history-body').innerHTML = totals.activeDays
+    ? series
+        .slice()
+        .reverse()
+        .map(
+          (day) =>
+            `<tr><th scope="row">${displayDate(day.date)}</th><td>${numberLabel(day.sent)}</td><td>${numberLabel(day.received)}</td><td>${numberLabel(day.tokens)}</td><td>${day.conversations}</td></tr>`,
+        )
+        .join('')
+    : '<tr><td colspan="5" class="empty-cell">No activity in this period. Open Claude to start building your history.</td></tr>';
+  (element('db-export-history') as HTMLButtonElement).disabled = totals.activeDays === 0;
+}
 
-function renderConversations(d: { conversations?: Record<string, ConvEntry> | null }): void {
-  const convs = d.conversations;
-  const tbody = document.getElementById('conv-body');
-  const countEl = document.getElementById('conv-count');
+function renderQuota(data: DashboardData): void {
+  const pct =
+    typeof data.sessionPct === 'number' && Number.isFinite(data.sessionPct)
+      ? Math.min(100, Math.max(0, data.sessionPct))
+      : null;
+  const reported = data.source === 'network' || data.source === 'official-ui';
+  text('quota-percent', pct === null ? '—' : `${Math.round(pct)}%`);
+  element('quota-ring').style.strokeDashoffset = String(314.16 * (1 - (pct ?? 0) / 100));
+  element('quota-ring').classList.toggle('danger', (pct ?? 0) >= 90 || data.isRateLimited === true);
+  text(
+    'source-label',
+    data.isRateLimited ? 'Rate limited' : pct === null ? 'Waiting' : reported ? 'Reported' : 'Estimated',
+  );
+  text(
+    'quota-note',
+    pct === null
+      ? 'Session quota is not available yet. Open Claude.ai to connect.'
+      : reported
+        ? 'Usage reported by Claude. Limits can vary by model and demand.'
+        : 'Estimated usage. Actual limits vary by model, plan, and demand.',
+  );
+  resetAt =
+    data.resetTimestamp && data.resetTimestamp > Date.now()
+      ? data.resetTimestamp
+      : count(data.resetIn)
+        ? Date.now() + count(data.resetIn)
+        : 0;
+  renderCountdown();
+  const weekly = data.weeklyUsage?.usagePercent;
+  const hasWeekly = typeof weekly === 'number' && Number.isFinite(weekly);
+  const weeklyPct = hasWeekly ? Math.min(100, Math.max(0, weekly)) : 0;
+  text('weekly-percent', hasWeekly ? `${Math.round(weeklyPct)}%` : '—');
+  element('weekly-bar').style.width = `${weeklyPct}%`;
+  element('weekly-bar').classList.toggle('danger', weeklyPct >= 90);
+  text('weekly-note', hasWeekly ? 'All models · Reported weekly usage' : 'Weekly quota has not been reported yet');
+  text('today-tokens', numberLabel(count(data.daily?.tokensSent) + count(data.daily?.tokensReceived)));
+}
 
-  if (!convs || Object.keys(convs).length === 0) {
-    if (tbody) tbody.innerHTML = '<article class="px-5 py-4 text-center text-sm">No chats found.</article>';
-    if (countEl) countEl.textContent = '0';
+function renderCountdown(): void {
+  if (!resetAt) {
+    text('reset-timer', 'Not available');
     return;
   }
+  const seconds = Math.max(0, Math.floor((resetAt - Date.now()) / 1000));
+  text(
+    'reset-timer',
+    seconds
+      ? `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor(seconds / 60) % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+      : 'Awaiting refresh',
+  );
+}
 
-  const entries = Object.entries(convs);
-  if (countEl) countEl.textContent = String(entries.length);
-
-  const sorted = entries
+function renderConversations(conversations: Record<string, ConversationEntry>): void {
+  const entries = Object.entries(conversations)
     .sort(([, a], [, b]) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
-    .slice(0, 20);
-
-  if (tbody) {
-    tbody.innerHTML = sorted.map(([, conv]) => {
-      const total = (conv.messagesSent || 0) + (conv.messagesReceived || 0);
-      const tokens = (conv.tokensSent || 0) + (conv.tokensReceived || 0);
-      const date = formatDate(conv.startedAt);
-      const title = conv.title || 'Untitled';
-      return `<article class="flex items-center justify-between gap-3 px-5 py-4 transition hover:bg-muted">
-        <div class="min-w-0">
-          <p class="truncate font-medium">${esc(title)}</p>
-          <p class="mt-1 text-xs text-muted-foreground">${date} &middot; ${total} messages</p>
-        </div>
-        <div class="text-right">
-          <p class="font-semibold tabular-nums text-primary">${formatNum(tokens)}</p>
-          <p class="text-xs text-muted-foreground">tokens</p>
-        </div>
-      </article>`;
-    }).join('');
-  }
+    .slice(0, 6);
+  text('conv-count', entries.length ? `${entries.length} recent chats · All time` : 'Your latest chats · All time');
+  element('conv-body').innerHTML = entries.length
+    ? entries
+        .map(([id, conv], index) => {
+          const title = escapeHtml(conv.title || 'Untitled conversation');
+          const name = /^[0-9a-f-]{36}$/i.test(id)
+            ? `<a href="https://claude.ai/chat/${id}" target="_blank" rel="noopener noreferrer">${title}</a>`
+            : `<span>${title}</span>`;
+          return `<article class="conversation"><span class="conversation-index">${String(index + 1).padStart(2, '0')}</span><div>${name}<p>${numberLabel(count(conv.messagesSent) + count(conv.messagesReceived))} messages</p></div><span class="conversation-tokens">${numberLabel(count(conv.tokensSent) + count(conv.tokensReceived))}<small>est. tokens</small></span></article>`;
+        })
+        .join('')
+    : '<div class="chart-empty"><span class="empty-mark" aria-hidden="true">↗</span><strong>Your next idea starts here</strong><span>Conversations appear as you use Claude.</span><a href="https://claude.ai/new" target="_blank" rel="noopener noreferrer">Start a conversation ↗</a></div>';
 }
 
-// ---- Helpers ----
-
-function setText(id: string, val: string | number | null | undefined): void {
-  const el = document.getElementById(id);
-  if (el) el.textContent = String(val ?? '0');
-}
-
-function setNums(id: string, used: number, total: number, isTokens: boolean = false, remaining?: number): void {
-  const el = document.getElementById(id);
-  if (!el) return;
-  if (isTokens) {
-    if (total > 0) {
-      el.textContent = `${formatNum(used)} of ${formatNum(total)} tokens used`;
-    } else {
-      el.textContent = `${formatNum(used)} tokens used`;
-    }
-  } else {
-    const canSend = remaining !== undefined ? remaining : Math.max(0, total - used);
-    el.textContent = `${formatNum(used)} of ${formatNum(total)} used · ${formatNum(canSend)} can be sent`;
-  }
-}
-
-function setBar(id: string, pct: number): void {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.style.width = `${pct}%`;
-  el.classList.remove('bg-primary', 'bg-destructive');
-  if (pct >= 90) el.classList.add('bg-destructive');
-  else el.classList.add('bg-primary');
-}
-
-function formatDuration(ms: number): string {
-  if (ms <= 0 || !Number.isFinite(ms)) return '00:00:00';
-  const s = Math.floor(ms / 1000);
-  return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
-}
-
-function formatNum(n: number | null | undefined): string {
-  if (!n && n !== 0) return '0';
-  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
-  return String(n);
-}
-
-function formatDate(iso: string): string {
-  if (!iso) return '--';
-  const d = new Date(iso);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function getRecentDateKeys(earliestDateKey?: string): string[] {
-  const result: string[] = [];
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-
-  let days = 14; // default
-  if (earliestDateKey) {
-    const match = earliestDateKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (match) {
-      const earliest = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-      const diffTime = d.getTime() - earliest.getTime();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-      days = Math.max(diffDays, 7);
-    }
-  }
-
-  for (let i = days - 1; i >= 0; i--) {
-    const day = new Date(d);
-    day.setDate(d.getDate() - i);
-    result.push(`${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`);
-  }
-  return result;
-}
-
-function formatHeatmapDate(dateKey: string): string {
-  const [, month, day] = dateKey.split('-');
-  return `${month}/${day}`;
-}
-
-function heatLevel(count: number, max: number): number {
-  if (!count || max <= 0) return 0;
-  const ratio = count / max;
-  if (ratio <= 0.25) return 1;
-  if (ratio <= 0.5) return 2;
-  if (ratio <= 0.75) return 3;
-  return 4;
-}
-
-function capitalize(s: string): string { return s.charAt(0).toUpperCase() + s.slice(1); }
-
-async function handleExportHistory(): Promise<void> {
-  const result: [string, DayData][] | null = await chrome.runtime.sendMessage({ type: 'GET_HISTORY' });
-  if (!result || result.length === 0) {
-    alert('No history data to export yet.');
+function exportHistory(): void {
+  const series: DailyPoint[] = buildDailySeries(history, days);
+  if (!summarize(series).activeDays) {
+    notice('No recorded activity to export in this period.');
     return;
   }
-
-  const header = 'Date,Sent,Received,Tokens,Conversations';
-  const rows = result.map(([date, day]) => {
-    const sent = day.messagesSent || 0;
-    const received = day.messagesReceived || 0;
-    const tokens = (day.tokensSent || 0) + (day.tokensReceived || 0);
-    const convs = day.conversations || 0;
-    return `${date},${sent},${received},${tokens},${convs}`;
+  const rows = series.map((day) => `${day.date},${day.sent},${day.received},${day.tokens},${day.conversations}`);
+  const blob = new Blob([['Date,Sent,Received,Estimated Tokens,Conversations', ...rows].join('\r\n')], {
+    type: 'text/csv;charset=utf-8',
   });
-
-  const csv = [header, ...rows].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `claude-usage-history-${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-function esc(str: string): string {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `claude-usage-${days}days-${dateKey(new Date())}.csv`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  notice(`Exported ${days} days of usage history.`);
 }

@@ -65,13 +65,17 @@ async function build() {
     }
   }
 
-  const staticDirs = ['popup', 'options', 'inpage', 'dashboard'];
+  const staticDirs = ['popup', 'options', 'inpage', 'dashboard', 'shared'];
   for (const dir of staticDirs) {
     copyStatic(dir);
   }
 
   try { cpSync(resolve(__dirname, 'src', 'watcher.js'), resolve(dist, 'watcher.js')); } catch {}
   try { cpSync(resolve(__dirname, 'icons'), resolve(dist, 'icons'), { recursive: true }); } catch {}
+
+  const outfit = resolve(__dirname, 'node_modules', '@fontsource-variable', 'outfit');
+  cpSync(resolve(outfit, 'files'), resolve(dist, 'fonts'), { recursive: true });
+  cpSync(resolve(outfit, 'LICENSE'), resolve(dist, 'fonts', 'LICENSE'));
 
   console.log('building dashboard css with tailwind...');
   try {

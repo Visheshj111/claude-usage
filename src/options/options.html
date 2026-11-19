@@ -1,149 +1,255 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <script src="../theme-boot.js"></script>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Settings — Claude Usage</title>
-  <link rel="stylesheet" href="options.css">
-</head>
-<body>
-  <div id="app">
-    <header>
-      <h1>Settings</h1>
-    </header>
-
-
-    <section>
-      <h2>When does your usage reset?</h2>
-      <p class="desc">We'll track your usage based on this. Claude Pro users get resets every 5 hours.</p>
-      <div class="field">
-        <select id="reset-period">
-          <option value="5h">Every 5 hours (Claude Pro)</option>
-          <option value="daily">Every day at midnight</option>
-          <option value="weekly">Every week on Monday</option>
-          <option value="monthly">Every month on the 1st</option>
-        </select>
+  <head>
+    <script src="../theme-boot.js"></script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Settings — Claude Usage</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <a href="#preferences" class="skip-link">Skip to preferences</a>
+    <div id="app">
+      <div class="topbar">
+        <a class="brand" href="../dashboard/dashboard.html"
+          ><span class="brand-mark" aria-hidden="true">✳</span
+          ><span>Claude Usage<small>LOCAL USAGE TRACKER</small></span></a
+        >
+        <a class="button secondary" href="../dashboard/dashboard.html">← Overview</a>
       </div>
-    </section>
+      <header>
+        <p class="eyebrow">MAKE IT YOURS</p>
+        <h1>A little more your way.</h1>
+        <p class="desc">Settings for your tracking, workspace, and writing workflow.</p>
+      </header>
+      <nav class="settings-nav" aria-label="Settings sections">
+        <a href="#preferences">Preferences</a><a href="#prompt-refiner">Prompt Refiner</a
+        ><a href="#appearance">Appearance</a><a href="#privacy">Privacy &amp; data</a>
+      </nav>
+      <main id="preferences" class="settings-grid">
+        <section>
+          <h2>Usage window</h2>
+          <p class="desc">Choose the reset period used for local tracking. Reported limits still come from Claude.</p>
+          <div class="field">
+            <label for="reset-period">Reset period</label>
+            <select id="reset-period">
+              <option value="5h">Every 5 hours (Claude Pro)</option>
+              <option value="daily">Every day at midnight</option>
+              <option value="weekly">Every week on Monday</option>
+              <option value="monthly">Every month on the 1st</option>
+            </select>
+          </div>
+        </section>
 
-    <section>
-      <h2>How should we count your tokens?</h2>
-      <p class="desc">Pick how you want us to estimate tokens from your text.</p>
-      <div class="field">
-        <select id="token-method">
-          <option value="chars/4">Characters ÷ 4</option>
-          <option value="chars/3">Characters ÷ 3 (plays it safe)</option>
-          <option value="words*1.3">Words × 1.3</option>
-        </select>
-      </div>
-    </section>
+        <section>
+          <h2>Token estimates</h2>
+          <p class="desc">Choose a local estimation method. These counts are approximate, not billing totals.</p>
+          <div class="field">
+            <label for="token-method">Estimation method</label>
+            <select id="token-method">
+              <option value="chars/4">Characters ÷ 4</option>
+              <option value="chars/3">Characters ÷ 3 (plays it safe)</option>
+              <option value="words*1.3">Words × 1.3</option>
+            </select>
+          </div>
+        </section>
 
-    <section>
-      <h2>Alerts</h2>
-      <p class="desc">Get a quick browser notification when you hit 50%, 75%, 90%, or 100% of your limit.</p>
-      <label class="check">
-        <input type="checkbox" id="show-notifications">
-        <span>Turn on notifications</span>
-      </label>
-    </section>
+        <section>
+          <h2>Alerts</h2>
+          <p class="desc">Get a quick browser notification when you hit 50%, 75%, 90%, or 100% of your limit.</p>
+          <label class="check">
+            <input type="checkbox" id="show-notifications" />
+            <span>Turn on notifications</span>
+          </label>
+        </section>
 
-    <section>
-      <h2>Floating Widget</h2>
-      <p class="desc">Keep a handy little panel on your screen while using Claude.</p>
-      <label class="check">
-        <input type="checkbox" id="show-inpage-widget">
-        <span>Show widget on Claude.ai</span>
-      </label>
-    </section>
+        <section>
+          <h2>Floating Widget</h2>
+          <p class="desc">Keep usage and reset times within reach while you work on Claude.ai.</p>
+          <label class="check">
+            <input type="checkbox" id="show-inpage-widget" />
+            <span>Show widget on Claude.ai</span>
+          </label>
+        </section>
 
-    <section>
-      <h2>Prompt Refiner</h2>
-      <p class="desc">Adds <strong>✦ Refine</strong> next to Claude's chat box. It uses Claude to improve clarity, context, constraints, and the requested output—not just trim wording.</p>
-      <label class="check">
-        <input type="checkbox" id="refiner-enabled">
-        <span>Turn on the Prompt Refiner</span>
-      </label>
-      <div class="field refiner-key-field">
-        <label for="refiner-api-key">Anthropic API key</label>
-        <input id="refiner-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…">
-        <p class="field-note" id="refiner-key-status">Checking key status…</p>
-        <div class="refiner-key-actions">
-          <button class="btn-secondary" type="button" id="save-refiner-key">Save key for this session</button>
-          <button class="btn-secondary" type="button" id="clear-refiner-key">Clear key</button>
+        <section id="prompt-refiner" class="wide refiner-card">
+          <p class="eyebrow">OPTIONAL · REVIEW BEFORE REPLACING</p>
+          <h2>Prompt Refiner</h2>
+          <p class="desc">
+            Turn a rough draft into a clearer prompt with <strong>✦ Refine</strong> next to Claude's chat box. You
+            always review the suggestion before replacing anything.
+          </p>
+          <label class="check">
+            <input type="checkbox" id="refiner-enabled" />
+            <span>Turn on the Prompt Refiner</span>
+          </label>
+          <fieldset id="refiner-setup" class="refiner-setup" disabled>
+            <legend class="refiner-legend">Connect your AI service</legend>
+            <div class="field">
+              <label for="refiner-api-key">1. Paste your API key</label>
+              <input
+                id="refiner-api-key"
+                type="password"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Paste your key here"
+                aria-describedby="refiner-key-help"
+                maxlength="4096"
+              />
+              <p class="field-note" id="refiner-key-help">
+                We'll suggest the service when we recognize your key. Nothing is sent while you type.
+              </p>
+            </div>
+            <div class="field">
+              <label for="refiner-provider">2. Confirm your AI service</label>
+              <select id="refiner-provider" aria-describedby="refiner-provider-note">
+                <option value="">Choose your service</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="anthropic">Anthropic (Claude)</option>
+                <option value="openai">OpenAI</option>
+                <option value="gemini">Google Gemini</option>
+                <option value="custom">Other (OpenAI-compatible)</option>
+              </select>
+              <p class="field-note" id="refiner-provider-note" aria-live="polite">
+                Choose the service where you created the key.
+              </p>
+            </div>
+            <details id="refiner-advanced" class="refiner-advanced">
+              <summary id="refiner-advanced-label">Advanced (optional)</summary>
+              <div class="field" id="refiner-custom-url" hidden>
+                <label for="refiner-base-url">API address</label>
+                <input
+                  id="refiner-base-url"
+                  type="url"
+                  placeholder="https://api.example.com/v1"
+                  autocomplete="off"
+                  spellcheck="false"
+                  maxlength="2048"
+                  aria-describedby="refiner-url-help"
+                />
+                <p class="field-note" id="refiner-url-help">
+                  Use your service's HTTPS OpenAI-compatible base URL or chat/completions URL. Your key and draft will
+                  be sent here.
+                </p>
+              </div>
+              <div class="field">
+                <label for="refiner-model">Model</label>
+                <input
+                  id="refiner-model"
+                  type="text"
+                  placeholder="Choose a service first"
+                  autocomplete="off"
+                  spellcheck="false"
+                  maxlength="200"
+                  aria-describedby="refiner-model-help"
+                />
+                <p class="field-note" id="refiner-model-help">
+                  Leave blank to use the recommended model. Other services need their own model name. Changing models
+                  may incur charges.
+                </p>
+              </div>
+            </details>
+            <div class="refiner-key-actions">
+              <button class="btn-primary" type="button" id="save-refiner-key">Save key</button>
+              <button class="btn-secondary" type="button" id="clear-refiner-key">Clear key</button>
+            </div>
+          </fieldset>
+          <p class="field-note" id="refiner-key-status" role="status" aria-live="polite">Checking saved setup…</p>
+          <p class="field-note">
+            Your key stays in extension session storage, never on Claude.ai, and clears when the browser restarts. Only
+            the draft you choose to refine is sent to your selected service. Chrome may ask you to allow access when
+            saving. Saving does not test the key or spend credits.
+          </p>
+        </section>
+
+        <section id="appearance">
+          <h2>Appearance</h2>
+          <p class="desc">One theme across your dashboard, popup, and floating widget.</p>
+          <div class="field">
+            <label for="theme-mode">Color theme</label>
+            <select id="theme-mode">
+              <option value="auto">Match my system</option>
+              <option value="dark">Dark mode</option>
+              <option value="light">Light mode</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="danger">
+          <h2>Clear local history</h2>
+          <p class="desc">
+            Permanently remove tracked usage and conversation records from this device. Your chats on Claude.ai are not
+            deleted.
+          </p>
+          <button id="reset-all-btn" class="btn-danger" type="button">Delete my data</button>
+        </section>
+
+        <section id="privacy" class="wide">
+          <h2>Your data stays yours.</h2>
+          <p class="desc">Local usage history. No tracking servers. Export or clear your records at any time.</p>
+          <details class="privacy-body">
+            <summary>Read the privacy details</summary>
+            <p><strong>Claude Usage Tracker</strong> keeps everything right here on your computer.</p>
+
+            <h3>What we keep track of</h3>
+            <ul>
+              <li>The number of messages and tokens you use</li>
+              <li>Your chat titles and message counts</li>
+              <li>When you start and stop using Claude</li>
+            </ul>
+
+            <h3>Where it lives</h3>
+            <ul>
+              <li>Everything stays tucked away in your browser's local storage</li>
+              <li>If you export your data, we just hand you a file—we don't send it anywhere</li>
+              <li>Nothing ever touches a server we own</li>
+            </ul>
+
+            <h3>What we definitely don't do</h3>
+            <ul>
+              <li>We <strong>never</strong> collect your actual messages for tracking or analytics</li>
+              <li>We <strong>never</strong> send your data to a server we operate</li>
+              <li>We don't use creepy trackers or analytics</li>
+              <li>We don't sell or share your info</li>
+            </ul>
+
+            <h3>Prompt Refiner exception</h3>
+            <p>
+              When you explicitly click <strong>✦ Refine</strong>, the current draft is sent to your selected AI service
+              to produce a suggestion. OpenRouter may forward it to a model provider. The selected service's privacy
+              policy, quotas, and pricing apply. It is never sent while you type, and you review the result before it
+              replaces anything. Your API key stays in session-only extension storage and is cleared when the browser
+              restarts.
+            </p>
+
+            <h3>You're in control</h3>
+            <ul>
+              <li>Use the <strong>Delete my data</strong> button above to wipe everything out</li>
+              <li>If you uninstall the extension, everything goes with it</li>
+              <li>You can always come back here to read this again</li>
+            </ul>
+
+            <p class="privacy-note">
+              We just look at the webpage to figure out your usage. All the magic happens locally in your browser.
+            </p>
+          </details>
+        </section>
+      </main>
+
+      <div class="footer-bar">
+        <div>
+          <span class="footer-label">Your preferences</span
+          ><span id="save-status" role="status" aria-live="polite"
+            >Changes apply when you save. API keys are saved separately.</span
+          >
         </div>
+        <button id="save-btn" class="btn-primary" type="button">Save preferences</button>
       </div>
-      <p class="field-note">Your key stays in extension session storage, is never exposed to Claude.ai, and is cleared when the browser restarts. Your draft is sent to Anthropic only after you click Refine.</p>
-    </section>
-
-    <section>
-      <h2>Appearance</h2>
-      <p class="desc">How do you want the widget and popup to look?</p>
-      <div class="field">
-        <select id="theme-mode">
-          <option value="auto">Match my system</option>
-          <option value="dark">Dark mode</option>
-          <option value="light">Light mode</option>
-        </select>
+      <div class="credit">
+        Made by <a href="https://github.com/visheshj111" target="_blank" rel="noreferrer">Vishesh Jangid</a> &middot;
+        <a href="https://visheshj111.github.io/portfolio/" target="_blank" rel="noreferrer">Portfolio</a>
       </div>
-    </section>
-
-    <section class="danger">
-      <h2>Danger Zone</h2>
-      <p class="desc">Clear out everything we've saved. This deletes all your tracked usage and chats.</p>
-      <button id="reset-all-btn" class="btn-danger">Delete my data</button>
-    </section>
-
-    <section>
-      <h2>Your Privacy</h2>
-      <p class="desc">Here's how we handle your stuff.</p>
-      <div class="privacy-body">
-        <p><strong>Claude Usage Tracker</strong> keeps everything right here on your computer.</p>
-
-        <h3>What we keep track of</h3>
-        <ul>
-          <li>The number of messages and tokens you use</li>
-          <li>Your chat titles and message counts</li>
-          <li>When you start and stop using Claude</li>
-        </ul>
-
-        <h3>Where it lives</h3>
-        <ul>
-          <li>Everything stays tucked away in your browser's local storage</li>
-          <li>If you export your data, we just hand you a file—we don't send it anywhere</li>
-          <li>Nothing ever touches a server we own</li>
-        </ul>
-
-        <h3>What we definitely don't do</h3>
-        <ul>
-          <li>We <strong>never</strong> collect your actual messages for tracking or analytics</li>
-          <li>We <strong>never</strong> send your data to a server we operate</li>
-          <li>We don't use creepy trackers or analytics</li>
-          <li>We don't sell or share your info</li>
-        </ul>
-
-        <h3>Prompt Refiner exception</h3>
-        <p>When you explicitly click <strong>✦ Refine</strong>, the current draft is sent to Anthropic's official API to produce a suggestion. It is never sent while you type, and you review the result before it replaces anything. Your API key stays in session-only extension storage and is cleared when the browser restarts.</p>
-
-        <h3>You're in control</h3>
-        <ul>
-          <li>Use the <strong>Delete my data</strong> button above to wipe everything out</li>
-          <li>If you uninstall the extension, everything goes with it</li>
-          <li>You can always come back here to read this again</li>
-        </ul>
-
-        <p class="privacy-note">
-          We just look at the webpage to figure out your usage. All the magic happens locally in your browser.
-        </p>
-      </div>
-    </section>
-
-    <div class="footer-bar">
-      <button id="save-btn" class="btn-primary">Save</button>
-      <span id="save-status"></span>
     </div>
-    <div class="credit">Made by <a href="https://github.com/visheshj111" target="_blank">Vishesh Jangid</a> &middot; <a href="https://visheshj111.github.io/portfolio/" target="_blank">Portfolio</a></div>
-  </div>
-  <script src="options.js"></script>
-</body>
+    <script src="options.js"></script>
+  </body>
 </html>

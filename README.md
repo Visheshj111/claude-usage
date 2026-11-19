@@ -18,7 +18,7 @@ Not affiliated with Anthropic.
 - **Full dashboard** — detailed historical usage data and trends.
 - **Chat export** — export individual conversations or bulk export your chat history.
 - **Rate-limit alerts** — desktop notifications when you approach or hit a rate limit, with a live countdown to reset.
-- **AI prompt refinement** — an explicit inline **✦ Refine** action uses the official Anthropic Messages API to improve a draft's clarity, context, constraints, and output contract; review the result before replacing your draft.
+- **AI prompt refinement** — an explicit inline **✦ Refine** action uses your chosen AI service (Anthropic, OpenRouter, OpenAI, Google Gemini, or another OpenAI-compatible API) to improve a draft's clarity, context, constraints, and output contract; review the result before replacing your draft.
 - **Peak hours detection** — identifies high-usage periods and displays them in the dashboard.
 - **SPA navigation support** — automatically detects page transitions on Claude.ai (a single-page application) and re-scans for usage data.
 - **Theme-aware UI** — respects system and extension-level theme preferences.
@@ -42,6 +42,17 @@ Not affiliated with Anthropic.
 4. Enable **Developer mode** (toggle in the top right).
 5. Click **Load unpacked** and select the project root directory (the `dist/` folder is written alongside `manifest.json` at the root).
 6. Navigate to [claude.ai](https://claude.ai) — the usage widget should appear in the bottom-right corner.
+
+## Prompt Refiner setup
+
+1. Open the extension's **Settings**, then find **Prompt Refiner**.
+2. Paste your API key and confirm the suggested service. For unrecognized keys, choose the service that issued it.
+3. Click **Save key** and accept Chrome's access request for that service if prompted.
+4. Return to Claude.ai, write a draft, and click **✦ Refine**. Review the suggestion before choosing **Replace draft**.
+
+Common services have default models; **Advanced** is optional. OpenRouter defaults to `openrouter/free`, with no paid fallback (free-model limits and availability apply). Other defaults use their service's API pricing and account quotas; chat subscriptions do not include API credits. For **Other (OpenAI-compatible)**, enter a trusted HTTPS base URL (or chat/completions URL) and model name in Advanced. Only text Chat Completions APIs with Bearer-key authentication are supported by this custom option—not arbitrary API protocols or cloud credentials.
+
+Saving a key does not test it or make an AI request. Keys and provider configuration are session-only and clear when the browser restarts. A key is never tried against multiple services. After updating an unpacked extension, reload it at `chrome://extensions`, refresh the Settings and Claude.ai tabs, and save your key again.
 
 ## Build
 
@@ -188,12 +199,13 @@ A `MutationObserver` triggers re-detection on DOM changes, and a periodic interv
 | `webRequest` | Intercept network requests to `api.anthropic.com` for quota header detection. |
 | `https://claude.ai/*` | Run content scripts and access the Claude.ai page. |
 | `https://api.anthropic.com/*` | Intercept API requests for usage quota headers and, only after an explicit Prompt Refiner action, send the selected draft to Anthropic's official Messages API. |
+| Optional `https://*/*` host access | Allows configuring another HTTPS AI service. No blanket access is requested: clicking **Save key** requests only the selected service's host. The worker checks permission before saving or refining. |
 
 ## Privacy
 
 Usage tracking data is processed and stored **locally** in your browser's `chrome.storage`; the extension does not send it to an extension-operated server.
 
-The Prompt Refiner is different by design: after you explicitly click **✦ Refine**, it sends only that current draft to Anthropic's official Messages API to produce a suggested rewrite. It never refines while you type, never creates a hidden Claude.ai conversation, and always shows the suggestion for review before replacing the draft. Its user-provided API key is held in extension session storage (not exposed to Claude.ai or saved in normal settings) and is cleared when the browser restarts. Anthropic API usage and billing apply.
+The Prompt Refiner is different by design: after you explicitly click **✦ Refine**, it sends only that current draft to your selected AI service to produce a suggested rewrite. OpenRouter forwards requests to a model provider; custom endpoints receive the key and draft at the address you approve. The selected service's privacy policy, quotas, and billing apply. It never refines while you type, never creates a hidden Claude.ai conversation, and always shows the suggestion for review before replacing the draft. Its user-provided API key is held in extension session storage (not exposed to Claude.ai or saved in normal settings) and is cleared when the browser restarts. Requests omit cookies and reject redirects so credentials cannot silently follow a redirect to another destination.
 
 ## Chrome Web Store
 

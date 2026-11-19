@@ -1,220 +1,247 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <script src="../theme-boot.js"></script>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Claude Usage</title>
-  <link rel="stylesheet" href="popup.css">
-</head>
-<body>
-  <div id="app">
+  <head>
+    <script src="../theme-boot.js"></script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Claude Usage</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Privacy Policy Screen (shown first until accepted) -->
+      <div id="privacy-screen">
+        <h2 class="privacy-title">Privacy Policy</h2>
+        <div class="privacy-scroll">
+          <p><strong>Claude Usage Tracker</strong> keeps everything right here on your computer.</p>
 
-    <!-- Privacy Policy Screen (shown first until accepted) -->
-    <div id="privacy-screen">
-      <h2 class="privacy-title">Privacy Policy</h2>
-      <div class="privacy-scroll">
-        <p><strong>Claude Usage Tracker</strong> keeps everything right here on your computer.</p>
+          <h3>What we keep track of</h3>
+          <ul>
+            <li>The number of messages and tokens you use</li>
+            <li>Your chat titles and message counts</li>
+            <li>When you start and stop using Claude</li>
+          </ul>
 
-        <h3>What we keep track of</h3>
-        <ul>
-          <li>The number of messages and tokens you use</li>
-          <li>Your chat titles and message counts</li>
-          <li>When you start and stop using Claude</li>
-        </ul>
+          <h3>Where it lives</h3>
+          <ul>
+            <li>Everything stays tucked away in your browser's local storage</li>
+            <li>If you export your data, we just hand you a file—we don't send it anywhere</li>
+            <li>Nothing ever touches a server we own</li>
+          </ul>
 
-        <h3>Where it lives</h3>
-        <ul>
-          <li>Everything stays tucked away in your browser's local storage</li>
-          <li>If you export your data, we just hand you a file—we don't send it anywhere</li>
-          <li>Nothing ever touches a server we own</li>
-        </ul>
+          <h3>What we definitely don't do</h3>
+          <ul>
+            <li>Usage tracking stays local to your browser</li>
+            <li>No usage analytics are sent to a server we operate</li>
+            <li>We don't use creepy trackers or analytics</li>
+            <li>We don't sell or share your info</li>
+          </ul>
 
-        <h3>What we definitely don't do</h3>
-        <ul>
-          <li>We <strong>never</strong> read your actual messages</li>
-          <li>We <strong>never</strong> send your data to anyone else</li>
-          <li>We don't use creepy trackers or analytics</li>
-          <li>We don't sell or share your info</li>
-        </ul>
+          <h3>Optional Prompt Refiner</h3>
+          <p>
+            Only when you click Refine is your draft sent to the AI service you configured in Settings. Its privacy
+            policy and pricing apply. You review every suggestion before replacing your draft.
+          </p>
 
-        <h3>You're in control</h3>
-        <ul>
-          <li>Use the <strong>Clear</strong> button below to wipe everything out anytime</li>
-          <li>If you uninstall the extension, everything goes with it</li>
-          <li>You can always change your mind in the Settings</li>
-        </ul>
+          <h3>You're in control</h3>
+          <ul>
+            <li>Use the <strong>Clear</strong> button below to wipe everything out anytime</li>
+            <li>If you uninstall the extension, everything goes with it</li>
+            <li>You can always change your mind in the Settings</li>
+          </ul>
 
-        <p class="privacy-note">
-          We just look at the webpage to figure out your usage. All the magic happens locally in your browser.
-        </p>
+          <p class="privacy-note">
+            We just look at the webpage to figure out your usage. All the magic happens locally in your browser.
+          </p>
+        </div>
+        <button id="privacy-accept-btn" class="btn-primary">Accept &amp; Continue</button>
       </div>
-      <button id="privacy-accept-btn" class="btn-primary">Accept &amp; Continue</button>
+
+      <!-- Main extension content (shown after privacy policy is accepted) -->
+      <div id="main-content" style="display: none">
+        <header>
+          <div class="brand">
+            <span class="brand-mark" aria-hidden="true">✳</span
+            ><span>Claude Usage<small>Your activity, in perspective.</small></span>
+          </div>
+          <div class="header-badges">
+            <span class="api-dot" id="api-dot"></span>
+            <span class="badge" id="plan-badge-label">Tracker</span>
+            <span class="badge" id="plan-badge" style="display: none"></span>
+            <span class="badge accurate-badge" id="accurate-badge"></span>
+          </div>
+        </header>
+
+        <div class="usage-hero">
+          <div class="hero-copy">
+            <p class="eyebrow">CURRENT WINDOW <span id="window-badge"></span></p>
+            <h1>Room to create.</h1>
+            <span id="source-badge" class="source-badge">Detecting</span>
+            <p class="usage-note" id="usage-note">Open Claude.ai to connect usage.</p>
+          </div>
+          <div class="gauge-wrap">
+            <svg class="gauge" viewBox="0 0 120 120" aria-hidden="true">
+              <circle class="gauge-bg" cx="60" cy="60" r="48" />
+              <circle
+                class="gauge-fill"
+                id="gauge-ring"
+                cx="60"
+                cy="60"
+                r="48"
+                stroke-dasharray="301.6"
+                stroke-dashoffset="301.6"
+              />
+            </svg>
+            <span class="gauge-text" id="gauge-text">—</span>
+            <span class="gauge-caption">used</span>
+          </div>
+        </div>
+        <div class="reset-row reset-hero">
+          <span class="reset-lbl">Window resets in</span>
+          <span class="reset-time" id="reset-timer">—</span>
+        </div>
+        <div class="metric-grid">
+          <div class="metric-cell">
+            <span class="metric-val" id="metric-used">—</span><span class="metric-lbl">Window messages</span>
+          </div>
+          <div class="metric-cell">
+            <span class="metric-val" id="metric-remain">—</span><span class="metric-lbl">Est. remaining</span>
+          </div>
+          <div class="metric-cell">
+            <span class="metric-val" id="popup-tokens">—</span><span class="metric-lbl">Est. tokens today</span>
+          </div>
+        </div>
+        <section class="week-section" aria-labelledby="week-heading">
+          <div class="week-heading">
+            <h2 id="week-heading">The last 7 days</h2>
+            <span id="week-total">— messages</span>
+          </div>
+          <div id="week-chart" class="chart-host"><p class="muted small">Loading local history…</p></div>
+          <div class="week-caption"><span>Sent + received</span><span>Today</span></div>
+        </section>
+        <p id="popup-status" class="notice" role="status" hidden></p>
+        <footer>
+          <button id="dashboard-btn" class="button" type="button">
+            Open dashboard <span aria-hidden="true">↗</span>
+          </button>
+          <button id="settings-btn" class="button secondary" type="button">Settings</button>
+        </footer>
+        <details class="usage-details">
+          <summary>Weekly usage &amp; details</summary>
+          <!-- Peak hours banner -->
+          <div class="peak-banner" id="peak-row">
+            <div class="peak-banner-main">
+              <span class="peak-dot" id="peak-dot"></span>
+              <span class="peak-message" id="peak-message">Checking peak hours...</span>
+              <span class="peak-countdown" id="peak-timer">--:--:--</span>
+            </div>
+            <div class="peak-note">
+              Applies to Claude.ai chat. Claude Code on Pro/Max plans is no longer throttled during peak hours (since
+              May 2026).
+            </div>
+          </div>
+
+          <!-- Progress bars -->
+          <div class="prog-section">
+            <div class="prog-row">
+              <span class="prog-lbl">Session</span>
+              <div class="prog-bar">
+                <div class="prog-fill" id="session-bar"></div>
+              </div>
+              <span class="prog-nums" id="session-nums">—</span>
+            </div>
+
+            <!-- Weekly usage (hidden by default) -->
+            <div id="weekly-group" style="display: none">
+              <div class="prog-row">
+                <span class="prog-lbl">All models</span>
+                <div class="prog-bar">
+                  <div class="prog-fill safe" id="weekly-bar"></div>
+                </div>
+                <span class="prog-nums" id="weekly-nums"></span>
+              </div>
+              <div class="prog-row" id="weekly-sonnet-row" style="display: none">
+                <span class="prog-lbl">Sonnet</span>
+                <div class="prog-bar">
+                  <div class="prog-fill safe" id="weekly-sonnet-bar"></div>
+                </div>
+                <span class="prog-nums" id="weekly-sonnet-nums"></span>
+              </div>
+              <div class="prog-row" id="weekly-opus-row" style="display: none">
+                <span class="prog-lbl">Opus</span>
+                <div class="prog-bar">
+                  <div class="prog-fill safe" id="weekly-opus-bar"></div>
+                </div>
+                <span class="prog-nums" id="weekly-opus-nums"></span>
+              </div>
+              <div class="prog-row" id="weekly-fable-row" style="display: none">
+                <span class="prog-lbl">Fable</span>
+                <div class="prog-bar">
+                  <div class="prog-fill safe" id="weekly-fable-bar"></div>
+                </div>
+                <span class="prog-nums" id="weekly-fable-nums"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Session row -->
+          <div class="session-row">
+            <div class="session-top">
+              <span class="session-dot" id="session-dot"></span>
+              <span class="session-label">Session</span>
+              <span class="session-time" id="session-time">00:00:00</span>
+              <span class="session-suffix" id="session-suffix">/ 5h</span>
+            </div>
+            <div class="session-sub">
+              <span class="session-convs" id="session-convs">0 convs</span>
+              <span class="session-usage-line" id="session-usage-line"></span>
+            </div>
+          </div>
+
+          <!-- Cooldown row -->
+          <div class="reset-row" id="cooldown-info" style="display: none">
+            <span class="reset-lbl">Cooldown</span>
+            <span class="reset-time" id="cooldown-timer"></span>
+          </div>
+
+          <!-- Limit type / org info -->
+          <div class="info-row">
+            <span class="limit-type" id="limit-type"></span>
+            <span class="org-id" id="org-id" style="display: none"></span>
+          </div>
+
+          <!-- Confidence row -->
+          <div class="reset-row confidence-row">
+            <span class="reset-lbl">Data confidence</span>
+            <div class="confidence-bar-wrap">
+              <div class="confidence-fill" id="confidence-bar"></div>
+            </div>
+            <span class="confidence-pct" id="confidence-pct">—</span>
+          </div>
+
+          <hr class="divider" />
+
+          <div class="conv-header">
+            <span class="conv-lbl">Conversations</span>
+            <span class="conv-count" id="conv-count"></span>
+          </div>
+          <ul id="conv-list">
+            <li class="empty-li">None yet.</li>
+          </ul>
+
+          <div class="detail-actions">
+            <button id="export-btn" class="button secondary" type="button">Export current chat</button>
+            <button id="reset-btn" class="text-button" type="button">Clear usage</button>
+          </div>
+        </details>
+
+        <div class="credit">
+          Stored on this device ·
+          <a href="https://github.com/visheshj111" target="_blank" rel="noreferrer">Vishesh Jangid</a> &middot;
+          <a href="#" id="show-privacy-link">Privacy</a>
+        </div>
+      </div>
     </div>
-
-    <!-- Main extension content (shown after privacy policy is accepted) -->
-    <div id="main-content" style="display:none;">
-      <header>
-        <h3>Usage</h3>
-        <div class="header-badges">
-          <span class="api-dot" id="api-dot"></span>
-          <span class="badge" id="window-badge">5h window</span>
-          <span class="badge source-badge" id="source-badge">detecting</span>
-          <span class="badge" id="plan-badge" style="display:none"></span>
-          <span class="badge accurate-badge" id="accurate-badge"></span>
-        </div>
-      </header>
-
-      <!-- Peak hours banner -->
-      <div class="peak-banner" id="peak-row">
-        <div class="peak-banner-main">
-          <span class="peak-dot" id="peak-dot"></span>
-          <span class="peak-message" id="peak-message">Checking peak hours...</span>
-          <span class="peak-countdown" id="peak-timer">--:--:--</span>
-        </div>
-        <div class="peak-note">Applies to Claude.ai chat. Claude Code on Pro/Max plans is no longer throttled during peak hours (since May 2026).</div>
-      </div>
-
-      <!-- Gauge -->
-      <div class="gauge-wrap">
-        <svg class="gauge" viewBox="0 0 120 120">
-          <circle class="gauge-bg" cx="60" cy="60" r="48" />
-          <circle class="gauge-fill" id="gauge-ring" cx="60" cy="60" r="48"
-            stroke-dasharray="301.6" stroke-dashoffset="301.6" />
-        </svg>
-        <span class="gauge-text" id="gauge-text">—</span>
-      </div>
-
-      <!-- Metric grid -->
-      <div class="metric-grid">
-        <div class="metric-cell">
-          <span class="metric-val" id="metric-pct">—</span>
-          <span class="metric-lbl">Used</span>
-        </div>
-        <div class="metric-cell">
-          <span class="metric-val" id="metric-used">—</span>
-          <span class="metric-lbl">Messages</span>
-        </div>
-        <div class="metric-cell">
-          <span class="metric-val metric-remain" id="metric-remain">—</span>
-          <span class="metric-lbl">Remaining</span>
-        </div>
-      </div>
-
-      <!-- Progress bars -->
-      <div class="prog-section">
-        <div class="prog-row">
-          <span class="prog-lbl">Session</span>
-          <div class="prog-bar">
-            <div class="prog-fill" id="session-bar"></div>
-          </div>
-          <span class="prog-nums" id="session-nums">—</span>
-        </div>
-        <div class="prog-row">
-          <span class="prog-lbl">Tokens</span>
-          <div class="prog-bar">
-            <div class="prog-fill" id="token-bar"></div>
-          </div>
-          <span class="prog-nums" id="token-nums">—</span>
-        </div>
-
-        <!-- Weekly usage (hidden by default) -->
-        <div id="weekly-group" style="display:none">
-          <div class="prog-row">
-            <span class="prog-lbl">All models</span>
-            <div class="prog-bar">
-              <div class="prog-fill safe" id="weekly-bar"></div>
-            </div>
-            <span class="prog-nums" id="weekly-nums"></span>
-          </div>
-          <div class="prog-row" id="weekly-sonnet-row" style="display:none">
-            <span class="prog-lbl">Sonnet</span>
-            <div class="prog-bar">
-              <div class="prog-fill safe" id="weekly-sonnet-bar"></div>
-            </div>
-            <span class="prog-nums" id="weekly-sonnet-nums"></span>
-          </div>
-          <div class="prog-row" id="weekly-opus-row" style="display:none">
-            <span class="prog-lbl">Opus</span>
-            <div class="prog-bar">
-              <div class="prog-fill safe" id="weekly-opus-bar"></div>
-            </div>
-            <span class="prog-nums" id="weekly-opus-nums"></span>
-          </div>
-          <div class="prog-row" id="weekly-fable-row" style="display:none">
-            <span class="prog-lbl">Fable</span>
-            <div class="prog-bar">
-              <div class="prog-fill safe" id="weekly-fable-bar"></div>
-            </div>
-            <span class="prog-nums" id="weekly-fable-nums"></span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Session row -->
-      <div class="session-row">
-        <div class="session-top">
-          <span class="session-dot" id="session-dot"></span>
-          <span class="session-label">Session</span>
-          <span class="session-time" id="session-time">00:00:00</span>
-          <span class="session-suffix" id="session-suffix">/ 5h</span>
-        </div>
-        <div class="session-sub">
-          <span class="session-convs" id="session-convs">0 convs</span>
-          <span class="session-usage-line" id="session-usage-line"></span>
-        </div>
-      </div>
-
-      <!-- Reset row -->
-      <div class="reset-row">
-        <span class="reset-lbl">Window resets in</span>
-        <span class="reset-time" id="reset-timer">--:--:--</span>
-      </div>
-
-      <!-- Cooldown row -->
-      <div class="reset-row" id="cooldown-info" style="display:none;">
-        <span class="reset-lbl">Cooldown</span>
-        <span class="reset-time" id="cooldown-timer"></span>
-      </div>
-
-      <!-- Limit type / org info -->
-      <div class="info-row">
-        <span class="limit-type" id="limit-type"></span>
-        <span class="org-id" id="org-id" style="display:none;"></span>
-      </div>
-
-      <!-- Confidence row -->
-      <div class="reset-row confidence-row">
-        <span class="reset-lbl">Data confidence</span>
-        <div class="confidence-bar-wrap">
-          <div class="confidence-fill" id="confidence-bar"></div>
-        </div>
-        <span class="confidence-pct" id="confidence-pct">—</span>
-      </div>
-
-      <hr class="divider">
-
-      <div class="conv-header">
-        <span class="conv-lbl">Conversations</span>
-        <span class="conv-count" id="conv-count"></span>
-      </div>
-      <ul id="conv-list">
-        <li class="empty-li">None yet.</li>
-      </ul>
-
-      <footer>
-        <button id="dashboard-btn">Dashboard</button>
-        <button id="export-btn">Export</button>
-        <button id="settings-btn">Settings</button>
-        <button id="reset-btn">Clear</button>
-      </footer>
-
-      <div class="credit">
-        Made by <a href="https://github.com/visheshj111" target="_blank">Vishesh Jangid</a>
-        &middot; <a href="#" id="show-privacy-link">Privacy</a>
-      </div>
-    </div>
-  </div>
-  <script src="popup.js"></script>
-</body>
+    <script src="popup.js"></script>
+  </body>
 </html>

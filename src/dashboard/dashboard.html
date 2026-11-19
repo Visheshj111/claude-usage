@@ -1,193 +1,210 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
-    <script src="../theme-boot.js"></script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Screen</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Poppins:wght@100..900&family=Fira+Code:wght@300..700&family=Plus+Jakarta+Sans:wght@200;300;400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link id="theme-fonts" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <title>Overview — Claude Usage</title>
+    <script src="../theme-boot.js"></script>
     <link rel="stylesheet" href="dashboard.css" />
-    <script src="iconify-icon.min.js"></script>
   </head>
   <body>
-<div class="min-h-screen w-full bg-background flex flex-col relative font-sans text-foreground">
-  <header class="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur-md">
-    <div class="mx-auto flex w-full items-center justify-between px-4 py-4 md:px-6">
-      <div class="flex items-center gap-3">
-        <div class="flex h-10 w-10 shrink-0 overflow-hidden rounded-full shadow-md border border-border">
-          <img src="../icons/icon128.png" alt="Claude Usage" class="h-full w-full object-cover" />
+    <a class="skip-link" href="#main">Skip to content</a>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="dashboard.html"
+          ><span class="brand-mark" aria-hidden="true">✳</span
+          ><span>Claude Usage<small>Your personal analytics</small></span></a
+        >
+        <p class="nav-caption">WORKSPACE</p>
+        <nav aria-label="Main navigation">
+          <a class="nav-link selected" href="#main" aria-current="page"><span aria-hidden="true">◫</span> Overview</a>
+          <a class="nav-link" href="#activity"><span aria-hidden="true">↗</span> Activity</a>
+          <a class="nav-link" href="#history"><span aria-hidden="true">≡</span> History</a>
+          <a class="nav-link" href="../options/options.html"><span aria-hidden="true">⚙</span> Settings</a>
+        </nav>
+        <div class="sidebar-bottom">
+          <span class="local-dot" aria-hidden="true"></span><strong>Local by design</strong>
+          <p>Your usage history stays<br />in this browser.</p>
+          <a href="https://claude.ai/new" target="_blank" rel="noopener noreferrer"
+            >Open Claude <span aria-hidden="true">↗</span></a
+          >
         </div>
-        <div>
-          <p class="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Personal analytics</p>
-          <h1 class="font-heading text-xl font-bold">Claude Usage</h1>
-        </div>
-      </div>
-      <div class="flex items-center gap-2">
-        <div id="period-badge" class="min-h-11 rounded-lg border border-border bg-card px-3 text-sm text-muted-foreground">
-          <iconify-icon icon="lucide:calendar" class="mr-2 text-base"></iconify-icon>Last 14 days
-        </div>
-        <button id="db-force-reload" class="flex min-h-11 w-11 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition hover:border-primary hover:text-foreground" aria-label="Refresh usage data">
-          <iconify-icon icon="lucide:refresh-cw" class="text-lg"></iconify-icon>
-        </button>
-      </div>
-    </div>
-  </header>
+      </aside>
 
-  <main class="mx-auto w-full flex-1 px-4 py-6 md:px-6 md:py-8">
-    <section class="mb-8">
-      <div class="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-        <div>
-          <p id="overview-period" class="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary">Current reset period</p>
-          <h2 class="font-heading text-2xl font-bold text-balance">Right Now</h2>
-          <p class="mt-1 text-sm text-muted-foreground">A clear view of your Claude limits, conversations, and active session.</p>
-        </div>
-        <div class="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
-          <span id="status-dot" class="h-2 w-2 rounded-full bg-tertiary"></span>
-          <span id="status-label" class="text-sm text-muted-foreground">Usage tracking live</span>
-        </div>
-      </div>
-
-      <div class="grid grid-cols-2 gap-3 lg:grid-cols-6">
-        <article class="rounded-xl border border-border bg-card p-4 shadow-md transition hover:-translate-y-0.5 hover:border-primary">
-          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Messages</p>
-          <p class="mt-3 font-heading text-2xl font-bold tabular-nums"><span id="ov-messages">0</span> <span id="ov-messages-of" class="text-sm font-medium text-muted-foreground">/ 100</span></p>
-          <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-accent">
-            <div id="bar-messages-mini" class="h-full w-0 rounded-full bg-primary transition-all"></div>
-          </div>
-        </article>
-        
-        <article class="rounded-xl border border-border bg-card p-4 shadow-md transition hover:-translate-y-0.5 hover:border-primary">
-          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tokens</p>
-          <p class="mt-3 font-heading text-2xl font-bold tabular-nums"><span id="ov-tokens">0</span> <span id="ov-tokens-of" class="text-sm font-medium text-muted-foreground">/ 50K</span></p>
-          <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-accent">
-            <div id="bar-tokens-mini" class="h-full w-0 rounded-full bg-primary transition-all"></div>
-          </div>
-        </article>
-
-        <article class="rounded-xl border border-border bg-card p-4 shadow-md transition hover:-translate-y-0.5 hover:border-primary">
-          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sent</p>
-          <p id="ov-sent" class="mt-3 font-heading text-2xl font-bold tabular-nums">0</p>
-          <p class="mt-3 text-xs text-muted-foreground">messages sent</p>
-        </article>
-
-        <article class="rounded-xl border border-border bg-card p-4 shadow-md transition hover:-translate-y-0.5 hover:border-primary">
-          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Received</p>
-          <p id="ov-recv" class="mt-3 font-heading text-2xl font-bold tabular-nums">0</p>
-          <p class="mt-3 text-xs text-muted-foreground">messages received</p>
-        </article>
-
-        <article class="rounded-xl border border-border bg-card p-4 shadow-md transition hover:-translate-y-0.5 hover:border-primary">
-          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Chats</p>
-          <p id="ov-convs" class="mt-3 font-heading text-2xl font-bold tabular-nums">0</p>
-          <p class="mt-3 text-xs text-muted-foreground">active today</p>
-        </article>
-
-        <article class="rounded-xl border border-border bg-card p-4 shadow-md transition hover:-translate-y-0.5 hover:border-primary">
-          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Session</p>
-          <p id="ov-session" class="mt-3 font-heading text-2xl font-bold tabular-nums">--:--:--</p>
-          <p class="mt-3 text-xs text-muted-foreground">duration</p>
-        </article>
-      </div>
-
-      <div class="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr_260px]">
-        <div class="rounded-xl border border-border bg-card p-5 shadow-md">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-semibold">Message limit</p>
-              <p id="nums-messages" class="mt-1 text-xs text-muted-foreground">0 of 100 messages used</p>
-            </div>
-            <span id="pct-messages" class="rounded-full bg-accent px-2.5 py-1 text-xs font-semibold text-primary">0%</span>
-          </div>
-          <div class="mt-4 h-3 overflow-hidden rounded-full bg-accent">
-            <div id="bar-messages" class="h-full w-0 rounded-full bg-primary transition-all"></div>
-          </div>
-        </div>
-
-        <div class="rounded-xl border border-border bg-card p-5 shadow-md">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-semibold">Token limit</p>
-              <p id="nums-tokens" class="mt-1 text-xs text-muted-foreground">0 of 50,000 tokens used</p>
-            </div>
-            <span id="pct-tokens" class="rounded-full bg-accent px-2.5 py-1 text-xs font-semibold text-primary">0%</span>
-          </div>
-          <div class="mt-4 h-3 overflow-hidden rounded-full bg-accent">
-            <div id="bar-tokens" class="h-full w-0 rounded-full bg-primary transition-all"></div>
-          </div>
-        </div>
-
-        <div class="rounded-xl border border-primary/60 bg-primary p-5 shadow-md">
-          <p class="text-xs font-semibold uppercase tracking-[0.16em] text-primary-foreground">Limits reset in</p>
-          <p id="reset-timer" class="mt-2 font-heading text-3xl font-bold tabular-nums text-primary-foreground">--:--:--</p>
-        </div>
-      </div>
-    </section>
-
-    <section class="mb-8 rounded-xl border border-border bg-card p-5 shadow-md md:p-6">
-      <div class="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-        <div>
-          <h2 class="font-heading text-lg font-semibold">Activity Map</h2>
-          <p id="heatmap-range" class="mt-1 text-sm text-muted-foreground">Message and token intensity</p>
-        </div>
-        <div class="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>Less</span>
-          <span class="h-3 w-3 rounded-sm bg-accent"></span>
-          <span class="h-3 w-3 rounded-sm bg-primary/30"></span>
-          <span class="h-3 w-3 rounded-sm bg-primary/60"></span>
-          <span class="h-3 w-3 rounded-sm bg-primary"></span>
-          <span>More</span>
-        </div>
-      </div>
-      <div class="mt-6 overflow-x-auto">
-        <div id="hours-heatmap">
-          <!-- Heatmap generated via dashboard.ts -->
-        </div>
-      </div>
-    </section>
-
-    <div class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-      <section class="overflow-hidden rounded-xl border border-border bg-card shadow-md">
-        <div class="flex items-center justify-between border-b border-border px-5 py-4">
+      <main id="main" tabindex="-1">
+        <header class="page-heading">
           <div>
-            <h2 class="font-heading text-lg font-semibold">Day by Day</h2>
-            <p id="history-count" class="mt-1 text-sm text-muted-foreground">Your recent Claude activity.</p>
+            <p class="eyebrow">A LITTLE PERSPECTIVE</p>
+            <h1>Your Claude, <em>at a glance.</em></h1>
+            <p class="muted">Make room for your next good idea. Know where your usage stands.</p>
           </div>
-          <button id="db-export-history" class="min-h-11 rounded-lg px-3 text-sm text-primary transition hover:bg-accent">Export</button>
+          <button id="db-force-reload" type="button" class="button secondary">
+            <span aria-hidden="true">↻</span> Refresh
+          </button>
+        </header>
+        <p id="page-status" class="notice" role="status" hidden></p>
+        <div class="section-toolbar">
+          <div>
+            <h2>Usage overview</h2>
+            <p id="range-label" class="muted small">Last 14 days · including today</p>
+          </div>
+          <div class="segmented" role="group" aria-label="History date range">
+            <button type="button" data-range="7" aria-pressed="false">7 days</button>
+            <button type="button" data-range="14" aria-pressed="true">14 days</button>
+            <button type="button" data-range="30" aria-pressed="false">30 days</button>
+          </div>
         </div>
-        <div class="overflow-x-auto">
-          <table id="history-table" class="w-full min-w-[620px] text-left text-sm">
-            <thead class="bg-muted text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th class="px-5 py-3 font-medium">Date</th>
-                <th class="px-3 py-3 font-medium">Sent</th>
-                <th class="px-3 py-3 font-medium">Received</th>
-                <th class="px-3 py-3 font-medium">Tokens</th>
-                <th class="px-3 py-3 font-medium">Chats</th>
-                <th class="px-5 py-3 font-medium">Usage</th>
-              </tr>
-            </thead>
-            <tbody id="history-body" class="divide-y divide-border">
-              <tr class="empty-row"><td colspan="6" class="px-5 py-4 text-center">No data yet. Go chat with Claude!</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+        <section class="stats-grid" aria-label="Selected period totals">
+          <article class="stat-card">
+            <p class="stat-label">Messages <span aria-hidden="true">↗</span></p>
+            <strong id="summary-messages">—</strong>
+            <p>Sent &amp; received</p>
+          </article>
+          <article class="stat-card">
+            <p class="stat-label">Estimated tokens <span aria-hidden="true">◈</span></p>
+            <strong id="summary-tokens">—</strong>
+            <p>Input &amp; output combined</p>
+          </article>
+          <article class="stat-card">
+            <p class="stat-label">Active days <span aria-hidden="true">▦</span></p>
+            <strong id="summary-active">—</strong>
+            <p id="active-note">Days with recorded activity</p>
+          </article>
+          <article class="stat-card">
+            <p class="stat-label">Daily average <span aria-hidden="true">≈</span></p>
+            <strong id="summary-average">—</strong>
+            <p>Messages per calendar day</p>
+          </article>
+        </section>
 
-      <section class="overflow-hidden rounded-xl border border-border bg-card shadow-md">
-        <div class="border-b border-border px-5 py-4">
-          <h2 class="font-heading text-lg font-semibold">Recent Chats</h2>
-          <p id="conv-count" class="mt-1 text-sm text-muted-foreground">Conversations with the highest token usage.</p>
+        <div class="primary-grid" id="activity">
+          <section class="card trend-card" aria-labelledby="trend-title">
+            <div class="card-heading">
+              <div>
+                <p class="eyebrow">THE BIG PICTURE</p>
+                <h2 id="trend-title">Your activity, over time</h2>
+              </div>
+              <div class="segmented" role="group" aria-label="Chart metric">
+                <button type="button" data-metric="messages" aria-pressed="true">Messages</button
+                ><button type="button" data-metric="tokens" aria-pressed="false">Tokens</button>
+              </div>
+            </div>
+            <div class="trend-total">
+              <strong id="trend-total">—</strong><span id="trend-unit">messages in this period</span>
+            </div>
+            <div id="trend-chart" class="chart-host"><div class="chart-empty">Loading your activity…</div></div>
+            <div class="card-foot">
+              <span class="legend-dot" aria-hidden="true"></span
+              ><span id="trend-note">Sent + received · Recorded on this device</span>
+            </div>
+          </section>
+          <section class="card quota-card" aria-labelledby="quota-title">
+            <div class="card-heading">
+              <h2 id="quota-title">Current window</h2>
+              <span id="source-label" class="pill">Detecting</span>
+            </div>
+            <div class="quota-visual">
+              <svg viewBox="0 0 120 120" aria-hidden="true">
+                <circle class="quota-track" cx="60" cy="60" r="50" />
+                <circle
+                  id="quota-ring"
+                  class="quota-ring"
+                  cx="60"
+                  cy="60"
+                  r="50"
+                  stroke-dasharray="314.16"
+                  stroke-dashoffset="314.16"
+                />
+              </svg>
+              <div><strong id="quota-percent">—</strong><span>session used</span></div>
+            </div>
+            <p id="quota-note" class="muted small">Waiting for usage data</p>
+            <div class="reset-tile"><span>Resets in</span><strong id="reset-timer">—</strong></div>
+            <div class="weekly-heading"><span>Weekly usage</span><strong id="weekly-percent">—</strong></div>
+            <div class="progress-track"><div id="weekly-bar" class="progress-fill"></div></div>
+            <p id="weekly-note" class="small muted">All models · When reported by Claude</p>
+            <div class="today-tokens"><span>Today's estimated tokens</span><strong id="today-tokens">—</strong></div>
+          </section>
         </div>
-        <div id="conv-body" class="divide-y divide-border">
-          <article class="px-5 py-4 text-center text-sm">No chats found.</article>
+
+        <div class="secondary-grid">
+          <section class="card" aria-labelledby="heatmap-title">
+            <div class="card-heading">
+              <div>
+                <p class="eyebrow">SHOWING UP ADDS UP</p>
+                <h2 id="heatmap-title">Your activity footprint</h2>
+              </div>
+              <span class="pill">90 days</span>
+            </div>
+            <p class="muted small">A little every day, or a lot all at once. It's your rhythm.</p>
+            <div id="activity-heatmap" class="heatmap-host"></div>
+            <div class="heat-legend small muted">
+              <span>Less</span><i class="heat-0"></i><i class="heat-1"></i><i class="heat-2"></i><i class="heat-3"></i
+              ><i class="heat-4"></i><span>More</span><span class="legend-end">Sent + received</span>
+            </div>
+          </section>
+          <section class="card" aria-labelledby="hourly-title">
+            <div class="card-heading">
+              <div>
+                <p class="eyebrow">FIND YOUR RHYTHM</p>
+                <h2 id="hourly-title">When you use Claude</h2>
+              </div>
+              <span id="peak-hour" class="pill">Local time</span>
+            </div>
+            <div id="hourly-chart" class="chart-host"></div>
+          </section>
         </div>
-      </section>
+
+        <div class="history-grid" id="history">
+          <section class="card table-card" aria-labelledby="history-title">
+            <div class="card-heading">
+              <div>
+                <h2 id="history-title">Day by day</h2>
+                <p id="history-count" class="muted small">The numbers behind the graph</p>
+              </div>
+              <button id="db-export-history" type="button" class="button secondary">
+                Export CSV <span aria-hidden="true">↓</span>
+              </button>
+            </div>
+            <div class="table-scroll" tabindex="0" role="region" aria-label="Daily history">
+              <table>
+                <caption class="sr-only">
+                  Recorded daily activity for the selected date range. Token counts are estimates.
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Date</th>
+                    <th scope="col">Sent</th>
+                    <th scope="col">Received</th>
+                    <th scope="col">Est. tokens</th>
+                    <th scope="col">Chats</th>
+                  </tr>
+                </thead>
+                <tbody id="history-body">
+                  <tr>
+                    <td colspan="5" class="empty-cell">Loading history…</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <section class="card conversations-card" aria-labelledby="conversations-title">
+            <div class="card-heading">
+              <div>
+                <h2 id="conversations-title">Recent conversations</h2>
+                <p id="conv-count" class="small muted">Your latest chats · All time</p>
+              </div>
+              <span aria-hidden="true">↗</span>
+            </div>
+            <div id="conv-body"><p class="empty-cell">Loading conversations…</p></div>
+          </section>
+        </div>
+        <footer class="page-footer">
+          <span>Claude Usage Tracker <span aria-hidden="true">/</span> Independent. Not affiliated with Anthropic.</span
+          ><span id="updated-at">Waiting for data</span>
+        </footer>
+      </main>
     </div>
-  </main>
-</div>
-<script src="dashboard.js"></script>
-</body>
+    <script src="dashboard.js"></script>
+  </body>
 </html>

@@ -1,5 +1,5 @@
 import { sendRuntimeMessage } from "./org-id";
-import type { RefinementResult } from "../refiner";
+import { isRefinerProvider, REFINER_PROVIDERS, type RefinementResult } from "../refiner";
 
 const CONTROL_ID = "cut-composer-refiner";
 const DIALOG_ID = "cut-refine-overlay";
@@ -86,16 +86,22 @@ function removeControl(): void {
 }
 
 function hideDialog(): void {
+  const wasOpen = !!document.getElementById(DIALOG_ID);
   document.getElementById(DIALOG_ID)?.remove();
   activeRefinement = null;
+  if (wasOpen) document.querySelector<HTMLButtonElement>(`#${CONTROL_ID} button`)?.focus();
 }
 
-function openSettings(): void {
-  try {
-    chrome.runtime.openOptionsPage();
-  } catch {
-    // The extension context may have been invalidated during a hot reload.
+async function openSettings(): Promise<void> {
+  const button = document.querySelector<HTMLButtonElement>('#cut-refine-open-settings');
+  const message = document.getElementById('cut-refine-message');
+  if (button) button.disabled = true;
+  const response = await sendRuntimeMessage<{ success: boolean }>({ type: 'OPEN_SETTINGS' });
+  if (!response?.success && message?.isConnected) {
+    message.setAttribute('role', 'alert');
+    message.textContent = 'Could not open Settings. Reload Claude.ai and try again, or open Settings from the extension toolbar.';
   }
+  if (button) button.disabled = false;
 }
 
 function createDialog(): HTMLElement {
@@ -192,7 +198,7 @@ function showReviewDialog(composer: HTMLElement, result: RefinementResult): void
   overlay.innerHTML = `
     <section id="cut-refine-card" role="dialog" aria-modal="true" aria-labelledby="cut-refine-title">
       <div class="cut-refine-header">
-        <span class="cut-refine-title" id="cut-refine-title">Refined with Claude</span>
+        <span class="cut-refine-title" id="cut-refine-title">Refined prompt</span>
         <span class="cut-refine-size" id="cut-refine-size"></span>
         <button class="cut-refine-close" type="button" aria-label="Close">×</button>
       </div>
@@ -220,10 +226,12 @@ function showReviewDialog(composer: HTMLElement, result: RefinementResult): void
 
   const card = overlay.querySelector<HTMLElement>("#cut-refine-card");
   if (!card) return;
+  const provider = isRefinerProvider(result.provider) ? REFINER_PROVIDERS[result.provider].label : 'your AI service';
+  card.querySelector<HTMLElement>("#cut-refine-title")!.textContent = `Refined with ${provider}`;
   card.querySelector<HTMLElement>("#cut-refine-size")!.textContent = sizeSummary(result);
   card.querySelector<HTMLElement>("#cut-refine-note")!.textContent = result.changed
     ? "Review the suggested prompt before replacing the draft in Claude."
-    : "Claude returned the draft unchanged.";
+    : "The AI service returned the draft unchanged.";
   card.querySelector<HTMLElement>("#cut-orig-tokens")!.textContent = `≈ ${result.originalTokenEstimate} tokens`;
   card.querySelector<HTMLElement>("#cut-refined-tokens")!.textContent = `≈ ${result.refinedTokenEstimate} tokens`;
   card.querySelector<HTMLElement>("#cut-orig-text")!.textContent = result.original;
@@ -240,7 +248,7 @@ function showReviewDialog(composer: HTMLElement, result: RefinementResult): void
     if (readComposerText(current.composer) !== current.result.original && !current.replaceConfirmed) {
       current.replaceConfirmed = true;
       if (status) {
-        status.textContent = "Your draft changed while Claude was refining it. Click “Replace anyway” to overwrite it.";
+        status.textContent = "Your draft changed while it was being refined. Click “Replace anyway” to overwrite it.";
         status.hidden = false;
       }
       if (accept) accept.textContent = "Replace anyway";
@@ -264,7 +272,7 @@ async function requestRefinement(): Promise<void> {
 
   const draft = readComposerText(composer);
   if (!draft.trim()) {
-    showMessageDialog("Write a draft first", "Add the prompt you want Claude to improve, then choose Refine.");
+    showMessageDialog("Write a draft first", "Add the prompt you want to improve, then choose Refine.");
     return;
   }
 
@@ -278,11 +286,12 @@ async function requestRefinement(): Promise<void> {
       return;
     }
     if (!response.ok || !response.result) {
-      const message = response.error || "Claude could not refine this prompt right now. Try again.";
+      const message = response.error || "Your AI service could not refine this prompt right now. Try again.";
+      const needsSetup = message.startsWith("Add an API key") || message.startsWith("Add an Anthropic API key");
       showMessageDialog(
-        message.startsWith("Add an Anthropic API key") ? "Connect Anthropic" : "Refinement unavailable",
+        needsSetup ? "Connect your AI service" : "Refinement unavailable",
         message,
-        message.startsWith("Add an Anthropic API key"),
+        needsSetup || /settings/i.test(message),
       );
       return;
     }
@@ -322,8 +331,8 @@ function ensureControl(): void {
   control.setAttribute("role", "toolbar");
   const button = document.createElement("button");
   button.type = "button";
-  button.title = "Refine this draft with Claude";
-  button.setAttribute("aria-label", "Refine this draft with Claude");
+  button.title = "Refine this draft with your selected AI service";
+  button.setAttribute("aria-label", "Refine this draft with your selected AI service");
   button.textContent = "✦ Refine";
   button.addEventListener("click", (event) => {
     event.preventDefault();
@@ -374,9 +383,22 @@ export function initComposerRefiner(): void {
   composerObserver.observe(document.documentElement, { childList: true, subtree: true });
 
   escapeKeydownHandler = (event) => {
-    if (event.key === "Escape" && document.getElementById(DIALOG_ID)) {
+    const dialog = document.getElementById(DIALOG_ID);
+    if (!dialog) return;
+    if (event.key === "Escape") {
       event.preventDefault();
       hideDialog();
+    } else if (event.key === 'Tab') {
+      const buttons = Array.from(dialog.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+      const first = buttons[0];
+      const last = buttons[buttons.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
     }
   };
   document.addEventListener("keydown", escapeKeydownHandler);

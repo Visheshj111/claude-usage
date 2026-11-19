@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Claude Usage Tracker - Stats & Export Chat",
-  "version": "1.4.1",
+  "version": "1.5",
   "description": "Track your Claude.ai usage, messages, tokens, and conversations. Export your message. Not affiliated with Anthropic.",
   "icons": {
     "16": "icons/icon16.png",
@@ -20,6 +20,9 @@
     "https://claude.ai/*",
     "https://api.anthropic.com/*"
   ],
+  "optional_host_permissions": [
+    "https://*/*"
+  ],
   "web_accessible_resources": [
     {
       "resources": [
@@ -29,7 +32,8 @@
         "dist/dashboard/dashboard.css",
         "dist/dashboard/dashboard.js",
         "dist/dashboard/iconify-icon.min.js",
-        "dist/theme-boot.js"
+        "dist/theme-boot.js",
+        "dist/fonts/*"
       ],
       "matches": [
         "https://claude.ai/*"

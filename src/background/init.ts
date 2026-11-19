@@ -145,7 +145,9 @@ export async function init(): Promise<void> {
           sendResponse({ configured: false });
           break;
         }
-        getPromptRefinerStatus().then(sendResponse).catch(() => sendResponse({ configured: false }));
+        getPromptRefinerStatus()
+          .then((status) => sendResponse(isOptionsPage(sender) ? status : { configured: status.configured }))
+          .catch(() => sendResponse({ configured: false }));
         return true;
 
       case "SAVE_REFINER_API_KEY":
@@ -153,9 +155,9 @@ export async function init(): Promise<void> {
           sendResponse({ success: false, configured: false });
           break;
         }
-        savePromptRefinerApiKey(message.apiKey)
+        savePromptRefinerApiKey(message.apiKey, message.config)
           .then((status) => sendResponse({ success: true, ...status }))
-          .catch(() => sendResponse({ success: false, configured: false }));
+          .catch((error: unknown) => sendResponse({ success: false, error: getPromptRefinerErrorMessage(error) }));
         return true;
 
       case "CLEAR_REFINER_API_KEY":
@@ -205,10 +207,24 @@ export async function init(): Promise<void> {
         });
         return true;
 
+      case "OPEN_SETTINGS":
+        if (sender.id !== chrome.runtime.id) {
+          sendResponse({ success: false });
+          break;
+        }
+        chrome.runtime.openOptionsPage()
+          .then(() => sendResponse({ success: true }))
+          .catch(() => sendResponse({ success: false }));
+        return true;
+
       case "OPEN_DASHBOARD":
-        chrome.tabs.create({ url: chrome.runtime.getURL("dist/dashboard/dashboard.html") }).then(() => {
-          sendResponse({ success: true });
-        });
+        if (sender.id !== chrome.runtime.id) {
+          sendResponse({ success: false });
+          break;
+        }
+        chrome.tabs.create({ url: chrome.runtime.getURL("dist/dashboard/dashboard.html") })
+          .then(() => sendResponse({ success: true }))
+          .catch(() => sendResponse({ success: false }));
         return true;
 
       case "GET_HISTORY":
